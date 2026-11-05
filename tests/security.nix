@@ -21,9 +21,12 @@ assert m2airConfig.fileSystems."/boot".device == "/dev/disk/by-partlabel/ESP";
 assert m2airConfig.fileSystems."/mnt/shared".device == "/dev/disk/by-partlabel/shared";
 assert m2airConfig.fileSystems."/mnt/shared".fsType == "exfat";
 assert m2airConfig.boot.loader.systemd-boot.enable == false;
+assert m2airConfig.boot.loader.grub.enable == false;
 assert m2airConfig.boot.loader.efi.canTouchEfiVariables == false;
 pkgs.testers.runNixOSTest {
   name = "asahi-nixos-security";
+
+  sshBackdoor.enable = false;
 
   node.specialArgs = { inherit inputs; };
 
@@ -41,7 +44,7 @@ pkgs.testers.runNixOSTest {
           ../modules/secrets.nix
         ];
 
-        networking.hostName = "m2air-test";
+        networking.hostName = "host";
 
         virtualisation = {
           memorySize = 2048;
@@ -49,6 +52,9 @@ pkgs.testers.runNixOSTest {
           useNixStoreImage = true;
           writableStore = false;
         };
+
+        nix.enable = lib.mkVMOverride false;
+        containers.dev-untrusted.config.nix.enable = lib.mkVMOverride false;
 
         boot.initrd = {
           systemd = {
@@ -80,8 +86,8 @@ pkgs.testers.runNixOSTest {
                   if [ -b "$cand" ] && ! blkid "$cand" >/dev/null 2>&1; then
                     sgdisk --zap-all "$cand"
                     sgdisk -n 1:1M:65M -t 1:EF00 -c 1:ESP "$cand"
-                    sgdisk -n 2:65M:129M -t 2:0700 -c 2:shared "$cand"
-                    sgdisk -n 3:129M:0 -t 3:8309 -c 3:cryptroot "$cand"
+                    sgdisk -n 2:66M:130M -t 2:0700 -c 2:shared "$cand"
+                    sgdisk -n 3:131M:0 -t 3:8309 -c 3:cryptroot "$cand"
                     partprobe "$cand" 2>/dev/null || true
                     udevadm trigger --action=change "$cand"
                     udevadm settle
@@ -155,33 +161,36 @@ pkgs.testers.runNixOSTest {
         host.wait_for_open_port(9999)
         attacker.succeed("nc -z -w 3 host 22")
         attacker.fail("nc -z -w 2 host 9999")
-        attacker.fail("ping -c 1 -W 2 host")
+        attacker.fail("ping -4 -c 1 -W 2 host")
+        attacker.fail("ping -6 -c 1 -W 2 host")
         attacker.fail("nc -z -w 2 host 18080")
 
     with subtest("SSH enforces key-only authentication and confines sshd with AppArmor"):
-        sshd_cfg = host.succeed("sshd -T")
-        assert "passwordauthentication no" in sshd_cfg
-        assert "kbdinteractiveauthentication no" in sshd_cfg
-        assert "permitrootlogin no" in sshd_cfg
+        sshd_cfg = host.succeed("sshd -T -f /etc/ssh/sshd_config").lower()
+        assert "passwordauthentication no" in sshd_cfg, f"sshd_cfg: {sshd_cfg!r}"
+        assert "kbdinteractiveauthentication no" in sshd_cfg, f"sshd_cfg: {sshd_cfg!r}"
+        assert "permitrootlogin no" in sshd_cfg, f"sshd_cfg: {sshd_cfg!r}"
 
         host.succeed("aa-status --json | jq -e '.profiles[\"sshd\"] == \"enforce\"'")
         host.succeed(
             "aa-status --json | jq -e '(.processes | to_entries | map(.value[]) | map(select(.profile == \"sshd\" and .status == \"enforce\")) | length) >= 1'"
         )
 
-        attacker.fail(
+        pw_err = attacker.fail(
             "sshpass -p 'test-password-must-not-work-over-ssh' ssh "
+            "-F /dev/null "
             "-o PreferredAuthentications=password,keyboard-interactive "
             "-o PubkeyAuthentication=no "
             "-o StrictHostKeyChecking=no "
             "-o UserKnownHostsFile=/dev/null "
-            "thomas@host true"
+            "thomas@host true 2>&1"
         )
+        assert "Permission denied" in pw_err, f"unexpected ssh failure: {pw_err!r}"
 
         attacker.succeed("install -d -m 700 /root/.ssh")
         attacker.succeed("cat ${snakeOilPrivateKey} > /root/.ssh/id_key && chmod 600 /root/.ssh/id_key")
         out = attacker.succeed(
-            "ssh -i /root/.ssh/id_key "
+            "ssh -F /dev/null -i /root/.ssh/id_key "
             "-o IdentitiesOnly=yes "
             "-o StrictHostKeyChecking=no "
             "-o UserKnownHostsFile=/dev/null "
@@ -190,7 +199,10 @@ pkgs.testers.runNixOSTest {
         assert out == "thomas", f"expected thomas, got {out!r}"
 
     with subtest("sudo execWheelOnly and supported kernel hardening sysctls"):
-        host.fail("su -s /bin/sh unpriv -c 'sudo -n true'")
+        sudo_err = host.fail("su -l unpriv -s /bin/sh -c '/run/wrappers/bin/sudo -n true' 2>&1")
+        assert "Permission denied" in sudo_err, f"expected Permission denied from execWheelOnly, got {sudo_err!r}"
+        host.succeed("test -x /run/wrappers/bin/sudo")
+        assert host.succeed("stat -c '%U:%G:%a' /run/wrappers/bin/sudo").strip() == "root:wheel:4510"
         host.succeed("systemctl is-active systemd-sysctl.service")
         assert host.succeed("sysctl -n kernel.kptr_restrict").strip() == "2"
         assert host.succeed("sysctl -n kernel.dmesg_restrict").strip() == "1"
@@ -203,7 +215,7 @@ pkgs.testers.runNixOSTest {
         host.succeed("test -b /dev/mapper/cryptroot")
         status = host.succeed("cryptsetup status cryptroot")
         assert "LUKS2" in status, f"expected LUKS2 status, got {status!r}"
-        initrd_listing = host.succeed("zstd -dc /run/booted-system/initrd | cpio -t 2>/dev/null")
+        initrd_listing = host.succeed("zstd -dc < /run/booted-system/initrd | cpio -t 2>/dev/null")
         assert "etc/crypttab" in initrd_listing
         assert "systemd-cryptsetup" in initrd_listing
         assert "dm-crypt" in initrd_listing or "dm_crypt" in initrd_listing

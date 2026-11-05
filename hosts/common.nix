@@ -7,6 +7,7 @@
   # m1n1/U-Boot updates are handled by the runbook, not nixos-rebuild.
   # (vm.nix re-enables its own bootloader.)
   boot.loader.systemd-boot.enable = false;
+  boot.loader.grub.enable = false;
   boot.loader.efi.canTouchEfiVariables = false;
 
   time.timeZone = "Europe/Paris";

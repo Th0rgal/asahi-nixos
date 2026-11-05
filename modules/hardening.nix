@@ -34,12 +34,17 @@ in
       assertion = config.services.openssh.settings.KbdInteractiveAuthentication == false;
       message = "hardening invariant violated: services.openssh.settings.KbdInteractiveAuthentication must remain false.";
     }
+    {
+      assertion = config.services.openssh.settings.PermitRootLogin == "no";
+      message = "hardening invariant violated: services.openssh.settings.PermitRootLogin must remain \"no\".";
+    }
   ];
 
   services.openssh = {
     openFirewall = false;
     settings = {
-      PermitRootLogin = lib.mkDefault "no";
+      PermitRootLogin = "no";
+      PermitEmptyPasswords = false;
       X11Forwarding = lib.mkDefault false;
       AllowAgentForwarding = lib.mkDefault false;
       MaxAuthTries = lib.mkDefault 3;
@@ -55,6 +60,12 @@ in
     allowedUDPPorts = firewallExceptions.udp;
     allowedTCPPortRanges = [ ];
     allowedUDPPortRanges = [ ];
+    extraCommands = lib.mkBefore ''
+      ip6tables -w -I nixos-fw 1 -p icmpv6 --icmpv6-type echo-request ! -i lo -j nixos-fw-refuse
+    '';
+    extraStopCommands = lib.mkAfter ''
+      ip6tables -w -D nixos-fw -p icmpv6 --icmpv6-type echo-request ! -i lo -j nixos-fw-refuse 2>/dev/null || true
+    '';
   };
 
   security.sudo.execWheelOnly = true;
@@ -68,7 +79,7 @@ in
         abi <abi/4.0>,
         include <tunables/global>
 
-        profile sshd ${sshdPackage}/bin/sshd {
+        profile sshd ${sshdPackage}/bin/sshd flags=(attach_disconnected) {
           include <abstractions/base>
           include <abstractions/authentication>
           include <abstractions/nameservice>
@@ -129,7 +140,7 @@ in
           /root/.ssh/ r,
           /root/.ssh/authorized_keys* r,
 
-          profile sshd_auth_gate {
+          profile sshd_auth_gate flags=(attach_disconnected) {
             include <abstractions/base>
             include <abstractions/authentication>
             include <abstractions/nameservice>
@@ -164,6 +175,9 @@ in
             ${sshdPackage}/libexec/sshd-session mr,
             ${sshdPackage}/libexec/sshd-auth mrix,
             ${sshdPackage}/libexec/sftp-server PUx,
+            /run/wrappers/bin/* mrix,
+            /run/wrappers/wrappers.*/unix_chkpwd mrix,
+            /run/wrappers/wrappers.*/* mrix,
             /run/current-system/sw/bin/* Uxr,
             /nix/store/*/bin/* Uxr,
             /etc/profiles/per-user/*/bin/* Uxr,

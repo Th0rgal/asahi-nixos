@@ -29,6 +29,9 @@ in
     requires = [ "systemd-tmpfiles-setup.service" ];
   };
 
+  boot.kernel.sysctl."net.ipv4.conf.${hostVeth}.route_localnet" = 1;
+  boot.kernel.sysctl."net.ipv4.conf.all.route_localnet" = 1;
+
   networking.firewall = {
     extraCommands = ''
       ip46tables -w -I nixos-fw 1 -i ve-+ -m conntrack --ctstate ESTABLISHED,RELATED -j nixos-fw-accept
@@ -36,8 +39,12 @@ in
       ip46tables -w -I FORWARD 1 -i ve-+ -j DROP
       iptables -t nat -A OUTPUT -p tcp -d 127.0.0.1 --dport ${toString forwardedHostPort} \
         -j DNAT --to-destination 10.233.1.2:${toString forwardedContainerPort}
+      iptables -t nat -A POSTROUTING -o ${hostVeth} -p tcp -s 127.0.0.0/8 -d 10.233.1.2 --dport ${toString forwardedContainerPort} \
+        -j SNAT --to-source 10.233.1.1
     '';
     extraStopCommands = ''
+      iptables -t nat -D POSTROUTING -o ${hostVeth} -p tcp -s 127.0.0.0/8 -d 10.233.1.2 --dport ${toString forwardedContainerPort} \
+        -j SNAT --to-source 10.233.1.1 2>/dev/null || true
       iptables -t nat -D OUTPUT -p tcp -d 127.0.0.1 --dport ${toString forwardedHostPort} \
         -j DNAT --to-destination 10.233.1.2:${toString forwardedContainerPort} 2>/dev/null || true
       ip46tables -w -D nixos-fw -i ve-+ -m conntrack --ctstate ESTABLISHED,RELATED -j nixos-fw-accept 2>/dev/null || true
