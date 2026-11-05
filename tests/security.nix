@@ -9,6 +9,8 @@ let
     snakeOilPrivateKey
     snakeOilPublicKey
     ;
+
+  vmLuksKeyfile = pkgs.writeText "vm-luks-keyfile" "asahi-nixos-ci-test-luks-key";
 in
 assert m2airConfig.boot.initrd.luks.devices ? cryptroot;
 assert m2airConfig.boot.initrd.luks.devices.cryptroot.device == "/dev/disk/by-partlabel/cryptroot";
@@ -43,14 +45,65 @@ pkgs.testers.runNixOSTest {
 
         virtualisation = {
           memorySize = 2048;
+          emptyDiskImages = [ 512 ];
           useNixStoreImage = true;
           writableStore = false;
         };
 
-        boot.initrd.luks.devices = lib.mkVMOverride {
-          cryptroot = {
-            device = "/dev/disk/by-partlabel/cryptroot";
-            allowDiscards = true;
+        boot.initrd = {
+          systemd = {
+            initrdBin = [
+              pkgs.cryptsetup
+              pkgs.gptfdisk
+              pkgs.util-linux
+            ];
+            contents."/etc/vm-cryptroot.key".source = vmLuksKeyfile;
+            services.prepare-vm-cryptroot = {
+              description = "Format virtual GPT cryptroot partition for CI LUKS2 test";
+              wantedBy = [ "initrd.target" ];
+              before = [
+                "systemd-cryptsetup@cryptroot.service"
+                "cryptsetup.target"
+              ];
+              after = [
+                "systemd-udevd.service"
+                "systemd-modules-load.service"
+              ];
+              unitConfig.DefaultDependencies = false;
+              serviceConfig = {
+                Type = "oneshot";
+                RemainAfterExit = true;
+              };
+              script = ''
+                udevadm settle
+                for cand in /dev/vdb /dev/vdc; do
+                  if [ -b "$cand" ] && ! blkid "$cand" >/dev/null 2>&1; then
+                    sgdisk --zap-all "$cand"
+                    sgdisk -n 1:1M:65M -t 1:EF00 -c 1:ESP "$cand"
+                    sgdisk -n 2:65M:129M -t 2:0700 -c 2:shared "$cand"
+                    sgdisk -n 3:129M:0 -t 3:8309 -c 3:cryptroot "$cand"
+                    partprobe "$cand" 2>/dev/null || true
+                    udevadm trigger --action=change "$cand"
+                    udevadm settle
+                    for _ in $(seq 1 50); do
+                      [ -b /dev/disk/by-partlabel/cryptroot ] && break
+                      sleep 0.1
+                    done
+                    cryptsetup luksFormat -q --type luks2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000 \
+                      --key-file /etc/vm-cryptroot.key /dev/disk/by-partlabel/cryptroot
+                    break
+                  fi
+                done
+              '';
+            };
+          };
+
+          luks.devices = lib.mkVMOverride {
+            cryptroot = {
+              device = "/dev/disk/by-partlabel/cryptroot";
+              keyFile = "/etc/vm-cryptroot.key";
+              allowDiscards = true;
+            };
           };
         };
 
@@ -68,9 +121,11 @@ pkgs.testers.runNixOSTest {
         };
 
         environment.systemPackages = [
+          pkgs.cpio
           pkgs.jq
           pkgs.netcat-openbsd
           pkgs.sshpass
+          pkgs.zstd
         ];
       };
 
@@ -109,10 +164,7 @@ pkgs.testers.runNixOSTest {
         assert "kbdinteractiveauthentication no" in sshd_cfg
         assert "permitrootlogin no" in sshd_cfg
 
-        aa_json = host.succeed("aa-status --json")
-        host.succeed(
-            "aa-status --json | jq -e '.profiles[\"sshd\"] == \"enforce\"'"
-        )
+        host.succeed("aa-status --json | jq -e '.profiles[\"sshd\"] == \"enforce\"'")
         host.succeed(
             "aa-status --json | jq -e '(.processes | to_entries | map(.value[]) | map(select(.profile == \"sshd\" and .status == \"enforce\")) | length) >= 1'"
         )
@@ -147,11 +199,14 @@ pkgs.testers.runNixOSTest {
         assert host.succeed("sysctl -n fs.suid_dumpable").strip() == "0"
         assert host.succeed("sysctl -n net.ipv4.ip_forward").strip() == "0"
 
-    with subtest("LUKS2 cryptroot device is wired into initrd"):
-        host.succeed("lsinitrd /run/booted-system/initrd | grep -q cryptsetup")
-        host.succeed("lsinitrd /run/booted-system/initrd | grep -q dm_crypt")
-        initrd_init = host.succeed("lsinitrd /run/booted-system/initrd init")
-        assert "cryptroot" in initrd_init or "cryptsetup" in initrd_init
+    with subtest("LUKS2 cryptroot device is wired into initrd and unlocked at boot"):
+        host.succeed("test -b /dev/mapper/cryptroot")
+        status = host.succeed("cryptsetup status cryptroot")
+        assert "LUKS2" in status, f"expected LUKS2 status, got {status!r}"
+        initrd_listing = host.succeed("zstd -dc /run/booted-system/initrd | cpio -t 2>/dev/null")
+        assert "etc/crypttab" in initrd_listing
+        assert "systemd-cryptsetup" in initrd_listing
+        assert "dm-crypt" in initrd_listing or "dm_crypt" in initrd_listing
 
     with subtest("Declarative dev-untrusted container starts, shifts UIDs, and cannot reach host or WAN"):
         state = host.succeed("nixos-container status dev-untrusted").strip()
@@ -170,15 +225,15 @@ pkgs.testers.runNixOSTest {
 
         host.fail(
             "nixos-container run dev-untrusted -- "
-            "bash -c 'exec 3<>/dev/tcp/10.233.1.1/22'"
+            "nc -z -w 2 10.233.1.1 22"
         )
         host.fail(
             "nixos-container run dev-untrusted -- "
-            "bash -c 'exec 3<>/dev/tcp/10.233.1.1/9999'"
+            "nc -z -w 2 10.233.1.1 9999"
         )
         attacker_ip = attacker.succeed("hostname -I | awk '{print $1}'").strip()
         host.fail(
-            f"nixos-container run dev-untrusted -- bash -c 'exec 3<>/dev/tcp/{attacker_ip}/22'"
+            f"nixos-container run dev-untrusted -- nc -z -w 2 {attacker_ip} 22"
         )
 
         host.succeed(
@@ -186,6 +241,7 @@ pkgs.testers.runNixOSTest {
             "su -s /bin/sh dev -c "
             "'nohup nc -lk 0.0.0.0 8080 >/tmp/nc.log 2>&1 </dev/null &'"
         )
+        host.wait_until_succeeds("nc -z -w 2 10.233.1.2 8080")
         host.wait_until_succeeds("nc -z -w 2 127.0.0.1 18080")
   '';
 }

@@ -124,9 +124,7 @@
                 exec "${libexec}/disko" "$@"
               '';
             };
-          installer-bootstrap =
-            (apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; })
-            .config.system.build.isoImage;
+          installer-bootstrap = apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; };
           default = installer-bootstrap;
         }
       );

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
@@ -76,8 +80,17 @@ jobs:
             auto-optimise-store = true
             substituters = https://nixos-apple-silicon.cachix.org https://cache.nixos.org
             trusted-public-keys = nixos-apple-silicon.cachix.org-1:8psDu5SA5dAD7qA0zMy5UT292TxeEPzIz8VVEr2Js20= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
+      - name: Prepare and build Asahi kernel
+        run: |
+          nix build .#installer-bootstrap.config.system.build.kernel.src -j1 -L -o kernel-src
+          nix build .#installer-bootstrap.config.system.build.kernel.configfile -j1 -L
+          nix build .#installer-bootstrap.config.system.build.kernel -j1 -L -o kernel
+          KERNEL_SRC=$(readlink -f kernel-src)
+          rm -f kernel-src
+          nix-store --delete "$KERNEL_SRC" || true
       - name: Build installer ISO
-        run: nix build .#installer-bootstrap -L --out-link iso
+        run: nix build .#installer-bootstrap -j2 -L --out-link iso
       - uses: actions/upload-artifact@v4
         with:
           name: installer-iso
