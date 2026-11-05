@@ -3,9 +3,20 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs-toolchains.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     apple-silicon-support = {
       url = "github:nix-community/nixos-apple-silicon";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -15,6 +26,7 @@
       self,
       nixpkgs,
       apple-silicon-support,
+      ...
     }@inputs:
     let
       systems = [
