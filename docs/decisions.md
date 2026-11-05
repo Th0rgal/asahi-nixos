@@ -47,6 +47,25 @@ Date: 2026-11-05. Status: accepted.
 - rest: NixOS, LUKS2 + ext4 (software-only encryption; Apple's
   hardware-sealed FileVault keys are unavailable under Asahi)
 
+## DR-6 — Secrets via sops-nix, age root key held by the owner
+
+Date: 2026-11-05. Status: accepted.
+
+Repo contains zero plaintext secrets. sops-nix with an age keypair:
+public key committed, private key only on the owner's machines and the
+standing builder VM. Rehearsal-box IP and any credentials live in
+`secrets/` (encrypted), never in git.
+
+## DR-7 — Container isolation, not VMs (no KVM on Asahi)
+
+Date: 2026-11-05. Status: accepted.
+
+Qubes-style hardware isolation is unavailable: m1n1 owns the
+hypervisor and KVM guests are not usable on Apple Silicon today.
+Isolation model: declarative `nixos-container`s (systemd-nspawn)
+with no-network-by-default and uid-shifted bind mounts, plus bwrap
+sandboxing for untrusted `nix develop`. Revisit if KVM lands upstream.
+
 ## DR-5 — Boot chain updates stay manual
 
 Date: 2026-11-05. Status: accepted.
