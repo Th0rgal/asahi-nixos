@@ -66,8 +66,14 @@ jobs:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
             system-features = kvm nixos-test benchmark big-parallel
-      - name: Run NixOS security VM checks
-        run: nix build .#checks.x86_64-linux.security -L
+      - name: Run NixOS VM checks
+        run: |
+          nix build .#checks.x86_64-linux.security -L
+          nix build .#checks.x86_64-linux.desktop -L --out-link desktop-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-screenshot
+          path: desktop-check/desktop-shot.png
 
   installer-iso:
     runs-on: ubuntu-24.04-arm

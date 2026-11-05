@@ -1,0 +1,220 @@
+{
+  pkgs,
+  lib,
+  inputs,
+  m2airConfig,
+  rehearsalConfig,
+  vmConfig,
+}:
+assert m2airConfig.programs.hyprland.enable == true;
+assert !(rehearsalConfig.programs.hyprland.enable or false);
+assert !(vmConfig.programs.hyprland.enable or false);
+assert !(rehearsalConfig ? home-manager) || (rehearsalConfig.home-manager.users == { });
+assert !(vmConfig ? home-manager) || (vmConfig.home-manager.users == { });
+assert m2airConfig.home-manager.users ? thomas;
+assert m2airConfig.home-manager.users.thomas.wayland.windowManager.hyprland.enable == true;
+assert m2airConfig.home-manager.users.thomas.wayland.windowManager.hyprland.configType == "lua";
+assert m2airConfig.home-manager.users.thomas.wayland.windowManager.hyprland.extraConfig == "";
+assert
+  m2airConfig.home-manager.users.thomas.wayland.windowManager.hyprland.settings.config.input.kb_layout
+  == "fr";
+assert
+  m2airConfig.home-manager.users.thomas.wayland.windowManager.hyprland.settings.config.input.touchpad.natural_scroll
+  == true;
+assert
+  m2airConfig.home-manager.users.thomas.wayland.windowManager.hyprland.settings.config.input.touchpad.tap_to_click
+  == true;
+assert m2airConfig.home-manager.users.thomas.programs.foot.enable == true;
+assert m2airConfig.home-manager.users.thomas.programs.waybar.enable == true;
+assert m2airConfig.home-manager.users.thomas.programs.fuzzel.enable == true;
+assert m2airConfig.home-manager.users.thomas.programs.hyprlock.enable == true;
+assert m2airConfig.home-manager.users.thomas.services.hypridle.enable == true;
+assert m2airConfig.home-manager.users.thomas.services.hyprpaper.enable == true;
+pkgs.testers.runNixOSTest {
+  name = "asahi-nixos-desktop";
+
+  qemu.package = pkgs.symlinkJoin {
+    name = "qemu-kvm-virgl-sw";
+    paths = [ pkgs.qemu_kvm ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      for bin in qemu-kvm qemu-system-x86_64; do
+        wrapProgram "$out/bin/$bin" \
+          --set SDL_VIDEODRIVER offscreen \
+          --set LIBGL_ALWAYS_SOFTWARE 1 \
+          --set __EGL_VENDOR_LIBRARY_DIRS "${pkgs.mesa}/share/glvnd/egl_vendor.d" \
+          --set LIBGL_DRIVERS_PATH "${pkgs.mesa}/lib/dri" \
+          --set GBM_BACKENDS_PATH "${pkgs.mesa}/lib/gbm" \
+          --prefix LD_LIBRARY_PATH : "${pkgs.libglvnd}/lib:${pkgs.mesa}/lib" \
+          --append-flags "-display sdl,gl=on"
+      done
+    '';
+  };
+
+  node.specialArgs = { inherit inputs; };
+
+  nodes.desktop =
+    { pkgs, ... }:
+    {
+      imports = [
+        inputs.home-manager.nixosModules.home-manager
+        ../hosts/common.nix
+        ../modules/hardening.nix
+      ];
+
+      networking.hostName = "desktop";
+
+      virtualisation = {
+        memorySize = 2048;
+        cores = 2;
+        qemu.options = [
+          "-vga none"
+          "-device virtio-vga-gl"
+        ];
+      };
+
+      hardware.graphics.enable = true;
+
+      programs.hyprland = {
+        enable = true;
+        withUWSM = true;
+        xwayland.enable = true;
+      };
+
+      security.pam.services.hyprlock = { };
+      security.polkit.enable = true;
+
+      services.getty.autologinUser = "thomas";
+
+      environment.variables = {
+        WLR_RENDERER_ALLOW_SOFTWARE = "1";
+      };
+
+      programs.zsh.loginShellInit = ''
+        if [ "$(tty)" = "/dev/tty1" ]; then
+          export HYPRLAND_NO_SD_NOTIFY=1
+          exec start-hyprland >/tmp/hyprland.log 2>&1
+        fi
+      '';
+
+      users.users.thomas = {
+        isNormalUser = true;
+        uid = 1000;
+        extraGroups = [
+          "wheel"
+          "video"
+          "render"
+          "audio"
+        ];
+        shell = "/run/current-system/sw/bin/zsh";
+      };
+
+      home-manager = {
+        useGlobalPkgs = true;
+        useUserPackages = true;
+        users.thomas = import ../home;
+      };
+
+      environment.systemPackages = [
+        pkgs.jq
+        pkgs.netpbm
+        pkgs.procps
+      ];
+    };
+
+  testScript = ''
+    import json
+
+    def hypr(cmd: str) -> str:
+        return (
+            "su - thomas -c '"
+            "export XDG_RUNTIME_DIR=/run/user/1000; "
+            "export HYPRLAND_INSTANCE_SIGNATURE=$(ls -1 /run/user/1000/hypr 2>/dev/null | head -n1); "
+            "test -n \"$HYPRLAND_INSTANCE_SIGNATURE\" && "
+            f"{cmd}'"
+        )
+
+    start_all()
+
+    desktop.wait_for_unit("multi-user.target")
+
+    with subtest("Hyprland starts with Lua config, zero extraConfig, and Waybar/hyprpaper/hypridle"):
+        try:
+            desktop.wait_until_succeeds(
+                hypr("hyprctl instances -j | jq -e \"length >= 1\""),
+                timeout=90,
+            )
+        except Exception:
+            _, diag = desktop.execute(
+                "cat /tmp/hyprland.log /home/thomas/.local/share/hyprland/hyprland.log /run/user/1000/hypr/*/hyprland.log 2>&1 || true; ps aux; ls -la /home/thomas /run/user/1000"
+            )
+            print("DIAGNOSTICS:\n" + diag)
+            raise
+        desktop.succeed("test -f /home/thomas/.config/hypr/hyprland.lua")
+        desktop.succeed("test ! -e /home/thomas/.config/hypr/hyprland.conf")
+
+        config_err_raw = desktop.succeed(hypr("hyprctl configerrors -j")).strip()
+        config_errs = [e for e in json.loads(config_err_raw) if e.strip()]
+        assert config_errs == [], f"Hyprland config errors: {config_errs!r}"
+
+        kb_layout = desktop.succeed(
+            hypr("hyprctl getoption input:kb_layout -j | jq -r .str")
+        ).strip()
+        assert kb_layout == "fr", f"expected fr keymap, got {kb_layout!r}"
+
+        nat_scroll_data = json.loads(
+            desktop.succeed(hypr("hyprctl getoption input:touchpad:natural_scroll -j"))
+        )
+        assert nat_scroll_data.get("bool") is True or nat_scroll_data.get("int") == 1, (
+            f"expected natural_scroll=true, got {nat_scroll_data!r}"
+        )
+
+        tap_click_data = json.loads(
+            desktop.succeed(hypr("hyprctl getoption input:touchpad:tap-to-click -j"))
+        )
+        assert tap_click_data.get("bool") is True or tap_click_data.get("int") == 1, (
+            f"expected tap-to-click=true, got {tap_click_data!r}"
+        )
+
+        desktop.wait_until_succeeds("systemctl --user -M thomas@ is-active waybar.service", timeout=45)
+        desktop.wait_until_succeeds("systemctl --user -M thomas@ is-active hypridle.service", timeout=45)
+        desktop.wait_until_succeeds("systemctl --user -M thomas@ is-active hyprpaper.service", timeout=45)
+        desktop.wait_until_succeeds(
+            hypr("hyprctl layers -j | jq -e \".. | objects | select(.namespace? == \\\"hyprpaper\\\")\""),
+            timeout=45,
+        )
+        desktop.succeed("systemctl --user -M thomas@ is-active waybar.service")
+        desktop.succeed("systemctl --user -M thomas@ is-active hypridle.service")
+        desktop.succeed("systemctl --user -M thomas@ is-active hyprpaper.service")
+        desktop.succeed("test \"$(systemctl --user -M thomas@ show -p NRestarts --value waybar.service)\" = 0")
+        desktop.succeed("test \"$(systemctl --user -M thomas@ show -p NRestarts --value hypridle.service)\" = 0")
+        desktop.succeed("test \"$(systemctl --user -M thomas@ show -p NRestarts --value hyprpaper.service)\" = 0")
+        desktop.succeed("test -z \"$(ls -A /var/lib/systemd/coredump 2>/dev/null)\"")
+
+    with subtest("Special scratchpad spawns foot terminal and grim captures non-empty screenshot"):
+        desktop.succeed(
+            hypr(
+                "hyprctl dispatch \"hl.dsp.workspace.toggle_special(\\\"scratchpad\\\")\""
+            )
+        )
+        desktop.wait_until_succeeds(
+            hypr(
+                "hyprctl clients -j | jq -e \"map(select(.class == \\\"foot-scratchpad\\\")) | length >= 1\""
+            ),
+            timeout=45,
+        )
+
+        desktop.succeed(
+            hypr("WAYLAND_DISPLAY=wayland-1 grim /tmp/desktop-shot.png")
+        )
+        shot_size = int(desktop.succeed("stat -c %s /tmp/desktop-shot.png").strip())
+        assert shot_size > 8192, f"screenshot unexpectedly tiny: {shot_size} bytes"
+        unique_colors = int(
+            desktop.succeed(
+                "pngtopam /tmp/desktop-shot.png | ppmhist -noheader | wc -l"
+            ).strip()
+        )
+        assert unique_colors >= 16, f"screenshot looks blank ({unique_colors} unique colors)"
+        desktop.copy_from_machine("/tmp/desktop-shot.png", "")
+  '';
+}

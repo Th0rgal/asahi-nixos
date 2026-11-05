@@ -168,6 +168,14 @@
             inherit (nixpkgs) lib;
             m2airConfig = self.nixosConfigurations.m2air.config;
           };
+
+          desktop = import ./tests/desktop.nix {
+            inherit pkgs inputs;
+            inherit (nixpkgs) lib;
+            m2airConfig = self.nixosConfigurations.m2air.config;
+            rehearsalConfig = self.nixosConfigurations.rehearsal.config;
+            vmConfig = self.nixosConfigurations.vm.config;
+          };
         }
       );
 
