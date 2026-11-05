@@ -79,18 +79,21 @@
       # Cross-buildable Asahi/NixOS installer ISO (via
       # nixos-apple-silicon's mkInstallerBootstrapCustom). Buildable on
       # x86_64 so CI can produce it without an ARM runner.
-      packages = forAllSystems (
-        system: rec {
-          installer-bootstrap =
-            (apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; })
-            .config
-            .system
-            .build
-            .isoImage;
-          default = installer-bootstrap;
-        }
-      );
+      packages = forAllSystems (system: rec {
+        installer-bootstrap =
+          (apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; })
+          .config.system.build.isoImage;
+        default = installer-bootstrap;
+      });
 
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      # Wrapper: recent nixfmt chokes when 'nix fmt' invokes it with no
+      # positional args, so collect the .nix files ourselves.
+      formatter = forAllSystems (
+        system:
+        nixpkgs.legacyPackages.${system}.writeShellScriptBin "nix-fmt" ''
+          exec ${nixpkgs.legacyPackages.${system}.nixfmt}/bin/nixfmt \
+            $(git ls-files '*.nix' 2>/dev/null || find . -name '*.nix' -not -path './.git/*')
+        ''
+      );
     };
 }
