@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    # Evaluation is architecture-independent: all three nixosConfigurations
+    # must evaluate cleanly before anything builds.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate all hosts
+        run: |
+          nix eval .#nixosConfigurations.m2air.config.system.build.toplevel.drvPath --raw
+          nix eval .#nixosConfigurations.rehearsal.config.system.build.toplevel.drvPath --raw
+          nix eval .#nixosConfigurations.vm.config.system.build.toplevel.drvPath --raw
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Check formatting
+        run: |
+          nix fmt
+          git diff --exit-code
+
+  installer-iso:
+    # Cross-builds the Asahi/NixOS installer ISO on x86_64.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v15
+        with:
+          name: nix-apple-silicon
+          skipPush: true
+      - name: Build installer ISO
+        run: nix build .#installer-bootstrap -L --out-link iso
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-iso
+          path: iso/*
