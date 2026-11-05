@@ -3,7 +3,11 @@
 # emulate Apple hardware.
 { modulesPath, lib, ... }:
 {
-  imports = [ (modulesPath + "/profiles/qemu-guest.nix") ];
+  imports = [
+    (modulesPath + "/profiles/qemu-guest.nix")
+    ../modules/hardening.nix
+    ../modules/containers.nix
+  ];
 
   networking.hostName = "vmtest";
 
