@@ -88,15 +88,85 @@
         };
       };
 
-      # Cross-buildable Asahi/NixOS installer ISO (via
-      # nixos-apple-silicon's mkInstallerBootstrapCustom). Buildable on
-      # x86_64 so CI can produce it without an ARM runner.
-      packages = forAllSystems (system: rec {
-        installer-bootstrap =
-          (apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; })
-          .config.system.build.isoImage;
-        default = installer-bootstrap;
-      });
+      diskoConfigurations.m2air = import ./modules/disko-m2air.nix;
+
+      # Asahi/NixOS installer ISO (via nixos-apple-silicon's
+      # mkInstallerBootstrapCustom; built natively on ubuntu-24.04-arm in CI
+      # using the nixos-apple-silicon binary cache).
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          diskoSrc = inputs.disko;
+        in
+        rec {
+          disko =
+            let
+              libexec = pkgs.runCommand "disko-libexec" { } ''
+                mkdir -p "$out"
+                cp -r "${diskoSrc}"/{cli.nix,default.nix,disk-deactivate,lib} "$out/"
+                sed -e "s|libexec_dir=\".*\"|libexec_dir=\"$out\"|" "${diskoSrc}/disko" > "$out/disko"
+                chmod 755 "$out/disko"
+              '';
+            in
+            pkgs.writeShellApplication {
+              name = "disko";
+              runtimeInputs = [
+                pkgs.nix
+                pkgs.coreutils
+                pkgs.xcp
+                pkgs.nixos-install-tools
+                pkgs.exfatprogs
+              ];
+              text = ''
+                export DISKO_VERSION="${inputs.disko.shortRev or "pinned"}"
+                export NIX_PATH="nixpkgs=${nixpkgs}"
+                exec "${libexec}/disko" "$@"
+              '';
+            };
+          installer-bootstrap =
+            (apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; })
+            .config.system.build.isoImage;
+          default = installer-bootstrap;
+        }
+      );
+
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          diskoEval =
+            (nixpkgs.lib.nixosSystem {
+              inherit system;
+              modules = [
+                inputs.disko.nixosModules.disko
+                ./modules/disko-m2air.nix
+                { system.stateVersion = "25.05"; }
+              ];
+            }).config.system.build.destroyFormatMount;
+        in
+        {
+          disko-declare = pkgs.runCommand "disko-declare" { } ''
+            script="${diskoEval}/bin/disko-destroy-format-mount"
+            test -x "$script"
+            ${pkgs.bash}/bin/bash -n "$script"
+            ${pkgs.shellcheck}/bin/shellcheck -S warning -e SC2034,SC2054 "$script"
+            grep -q 'cryptsetup -q luksFormat' "$script"
+            grep -q 'mkfs.ext4' "$script"
+            grep -q 'mkfs.exfat' "$script"
+            grep -q 'mkfs.vfat' "$script"
+            grep -q 'cryptroot' "$script"
+            grep -q '/mnt/shared' "$script"
+            echo "$script" > "$out"
+          '';
+
+          security = import ./tests/security.nix {
+            inherit pkgs inputs;
+            inherit (nixpkgs) lib;
+            m2airConfig = self.nixosConfigurations.m2air.config;
+          };
+        }
+      );
 
       # Wrapper: recent nixfmt chokes when 'nix fmt' invokes it with no
       # positional args, so collect the .nix files ourselves.

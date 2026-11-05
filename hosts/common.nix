@@ -26,9 +26,9 @@
 
   nix.settings = {
     # nixos-apple-silicon binary cache — skips multi-hour kernel builds.
-    substituters = [ "https://nix-apple-silicon.cachix.org" ];
+    substituters = [ "https://nixos-apple-silicon.cachix.org" ];
     trusted-public-keys = [
-      "nix-apple-silicon.cachix.org-1:kly0chufrg16lrtaf1ffuo3wdkh5t4gcbv1hr3vfqrf"
+      "nixos-apple-silicon.cachix.org-1:8psDu5SA5dAD7qA0zMy5UT292TxeEPzIz8VVEr2Js20="
     ];
     auto-optimise-store = true;
   };
