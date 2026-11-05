@@ -15,6 +15,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     sops-nix = {
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -162,6 +167,14 @@
             inherit pkgs inputs;
             inherit (nixpkgs) lib;
             m2airConfig = self.nixosConfigurations.m2air.config;
+          };
+
+          desktop = import ./tests/desktop.nix {
+            inherit pkgs inputs;
+            inherit (nixpkgs) lib;
+            m2airConfig = self.nixosConfigurations.m2air.config;
+            rehearsalConfig = self.nixosConfigurations.rehearsal.config;
+            vmConfig = self.nixosConfigurations.vm.config;
           };
         }
       );
