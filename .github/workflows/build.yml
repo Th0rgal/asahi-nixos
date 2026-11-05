@@ -44,10 +44,8 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
-        with:
-          name: nix-apple-silicon
-          skipPush: true
+            substituters = https://nix-apple-silicon.cachix.org https://cache.nixos.org
+            trusted-public-keys = nix-apple-silicon.cachix.org-1:kly0chufrg16lrtaf1ffuo3wdkh5t4gcbv1hr3vfqrf cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY
       - name: Build installer ISO
         run: nix build .#installer-bootstrap -L --out-link iso
       - uses: actions/upload-artifact@v4
