@@ -39,6 +39,7 @@ pkgs.writeShellApplication {
     set -euo pipefail
 
     export OMARCHY_PATH="''${OMARCHY_PATH:-${omarchyShell.sharePath}}"
+    export OMARCHY_SHELL_IPC_TIMEOUT="''${OMARCHY_SHELL_IPC_TIMEOUT:-10s}"
     export TURBO_LEAN_BIN="''${TURBO_LEAN_BIN:-${pkgs.lean4}/bin/lean}"
     MARKETPLACE_REGISTRY_DEFAULT="${registryPath}"
     MARKETPLACE_REGISTRY_URL="https://raw.githubusercontent.com/omacom/omarchy-plugin-marketplace/main/registry.json"

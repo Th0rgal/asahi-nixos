@@ -153,6 +153,10 @@ pkgs.testers.runNixOSTest {
                 as_thomas("test \"$(omarchy-shell shell ping)\" = ok"),
                 timeout=60,
             )
+            workstation.wait_until_succeeds(
+                as_thomas("omarchnix plugin list --json | jq -e 'type == \"array\" and length >= 1'"),
+                timeout=90,
+            )
         except Exception:
             _, diag = workstation.execute(
                 "journalctl -t omarchy-shell --no-pager -n 120; systemctl --user -M thomas@ status omarchy-shell.service --no-pager || true; cat /tmp/hyprland.log || true"
