@@ -2,7 +2,7 @@
 
 Proof-carrying, declarative Omarchy-compatible NixOS & Home Manager workstation stack across **`aarch64-linux`** (Apple Silicon M-series via Asahi Linux, NVIDIA Grace / DGX Spark) and **`x86_64-linux`** workstations and VMs.
 
-See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/decisions.md`](docs/decisions.md) (`DR-1`..`DR-11`) for recorded design decisions.
+See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/decisions.md`](docs/decisions.md) (`DR-1`..`DR-13`) for recorded design decisions.
 
 ---
 
@@ -46,7 +46,7 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
 - **23+ Themes & Live Switching:** `omarchnix.lib.omarchy.importTheme` imports all bundled Omarchy `colors.toml` palettes (or custom directories) at Nix evaluation time; `omarchnix theme set <name>` switches themes live across `omarchy-shell`, `foot`, Hyprland, `opencode`, `claude`, and `hermes`.
 - **Quickshell QML Runtime & Plugins:** `pkgs.omarchnix.omarchy-shell` runs upstream `omarchy-shell` (`Qt 6.12` / `quickshell`) with NixOS FHS shims, while `programs.omarchnix.plugins.locked` + `omarchnix plugin install <id>` load validated `plugins.omarchy.org` plugins without symlinks.
 - **Agent-First Ergonomics:** Automatically provisions the governed `omarchnix` system skill and live theme hooks for `opencode`, `claude`, `codex`, and `hermes`, backed by `omarchnix status`, `omarchnix check`, and `omarchnix audit`.
-- **Proof-Carrying Lean 4 Userspace (`buildVerifiedLeanSys` + `omarchnix audit`):** Builds `omarchnix-receipt-gate` from pinned `lean-sys` + `turbo-lean` + `LeanNative` with `0 sorryAx` (`TurboLean.Inspector`), `turbo-lean audit-spec` tightness verification, verified ARMv8.2+ NEON `pmull` / x86_64 ELF64 codegen, and signed Schema v2 BLAKE3 + Ed25519 store receipts verified offline via `omarchnix audit`.
+- **Proof-Carrying Lean 4 Userspace (`buildVerifiedLeanSys` + `omarchnix audit`):** Builds `omarchnix-receipt-gate` from pinned `lean-sys` + `turbo-lean` + `LeanNative` with `0 sorryAx` (`TurboLean.Inspector`), `turbo-lean audit-spec` tightness verification, native Linux ARM64 (`--arch arm64 --isa armv8.2-crypto`) NEON `pmull` / x86_64 ELF64 codegen, fail-closed receipt extraction, verified plugin/sandbox admission policies, and externally pinned Ed25519 receipt/attestation verification (`security.omarchnix.trustedReceiptKeys`; explicit `--allow-dev-keys` for unauthenticated dev closures).
 
 ### Reference `nixosConfigurations`
 
@@ -55,7 +55,7 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
 | `m2air` | `aarch64-linux` | MacBook Air M2 (Asahi) | Primary Apple Silicon daily driver (LUKS2, `asahi-audio` DSP, 1.6x HiDPI, dual-boot macOS). |
 | `spark` | `aarch64-linux` | NVIDIA Grace / DGX Spark | ARM64 UEFI server & workstation (`systemd-boot`, hardened + Hyprland desktop). |
 | `workstation` | `x86_64-linux` | AMD / Intel desktop & cloud | Generic `x86_64-linux` UEFI workstation (`systemd-boot`, hardened + Hyprland desktop). |
-| `rehearsal` | `aarch64-linux` | Scaleway Mac mini M2 (`M2-M`) | Disposable BootROM dress rehearsal target (`docs/runbook-scaleway.md`). |
+| `rehearsal` | `aarch64-linux` | Scaleway Mac mini M2 Pro (`M2-L-ASAHI`) | Disposable BootROM dress rehearsal target with poweroff->reboot guard (`docs/runbook-scaleway.md`). |
 | `vm` | `aarch64-linux` | Plain QEMU guest | Software iteration target without Apple hardware dependencies. |
 
 Build the Asahi/NixOS installer ISO:
@@ -75,9 +75,9 @@ Every cell is backed by a recorded gate (CI run or runbook log in `docs/logs/`).
 | G1 — flake evaluates | `nix eval` across all hosts + standalone module checks in CI | passed ([`g1-2026-11-06.md`](docs/logs/g1-2026-11-06.md)) |
 | G2 — installer ISO builds | `nix build .#installer-bootstrap` in CI, artifact attached | passed ([`g2-2026-11-06.md`](docs/logs/g2-2026-11-06.md)) |
 | G3 — VM boots shared config | QEMU boot log in `docs/logs/` | passed ([`g3-2026-11-06.md`](docs/logs/g3-2026-11-06.md)) |
-| G4 — Asahi bootstrap on real BootROM | runbook log from the rehearsal box | Phase 0 unblocked; Scaleway `fr-par-1` `M2-M` HTTP 503 `out_of_stock` ([`g4-g5-2026-11-06.md`](docs/logs/g4-g5-2026-11-06.md)) |
-| G5 — NixOS install + rebuild on rehearsal | `nixos-rebuild switch` log on the mini | Phase 0 unblocked; Scaleway `fr-par-1` `M2-M` HTTP 503 `out_of_stock` ([`g4-g5-2026-11-06.md`](docs/logs/g4-g5-2026-11-06.md)) |
-| G6 — Air install, dual-boot macOS kept | runbook log from the Air | hardware polish + printed runbook ready ([`install-m2air.md`](docs/install-m2air.md), [`g4-g5-2026-11-06.md`](docs/logs/g4-g5-2026-11-06.md)) |
+| G4 — Asahi bootstrap on real BootROM | runbook log from the rehearsal box | `M2-L-ASAHI` cutover runbook + `rehearsal` power-guard ready; Orb Scaleway allowlist / `M2-M` `out_of_stock` logged ([`m5-m7-2026-11-06.md`](docs/logs/m5-m7-2026-11-06.md)) |
+| G5 — NixOS install + rebuild on rehearsal | `nixos-rebuild switch` log on the mini | `M2-L-ASAHI` cutover runbook + `rehearsal` power-guard ready; Orb Scaleway allowlist / `M2-M` `out_of_stock` logged ([`m5-m7-2026-11-06.md`](docs/logs/m5-m7-2026-11-06.md)) |
+| G6 — Air install, dual-boot macOS kept | runbook log from the Air | hardware polish + printed runbook ready ([`install-m2air.md`](docs/install-m2air.md), [`m5-m7-2026-11-06.md`](docs/logs/m5-m7-2026-11-06.md)) |
 | G7 — security & container invariants | `checks.x86_64-linux.{disko-declare,security}` in CI + secret sweep | passed ([`g7-2026-11-06.md`](docs/logs/g7-2026-11-06.md)) |
 | G8 — Hyprland desktop via Home Manager | `m2air` eval + `checks.x86_64-linux.desktop` screenshot in CI + `boat.dev` toplevel build | passed ([`g8-2026-11-06.md`](docs/logs/g8-2026-11-06.md), [`g3-2026-11-06.md`](docs/logs/g3-2026-11-06.md)) |
 

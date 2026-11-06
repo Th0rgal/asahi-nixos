@@ -1,26 +1,84 @@
-# Rehearsal machine: rented Mac mini M2 on Scaleway.
+# Rehearsal machine: rented Scaleway M2-L-ASAHI Mac mini.
 # Goal: validate boot chain + install flow + upgrade path on real BootROM
 # with a provider-side reset as the only safety net. Nothing else.
-# No personal config, no keys, no data. Disposable by design.
-{ lib, ... }:
+# No personal config, no owner keys, no data. Disposable by design.
+{ lib, pkgs, ... }:
 {
+  imports = [
+    ../modules/omarchnix.nix
+  ];
+
   networking.hostName = "rehearsal";
 
-  hardware.asahi.enable = true;
+  omarchnix = {
+    enable = true;
+    profile = "asahi";
+    hardening.enable = false;
+    containers.enable = false;
+    secrets.enable = false;
+    desktop.enable = false;
+    verifiedUserspace.enable = true;
+  };
 
-  # Disposable box: single plain ext4 root, no LUKS (DR-3).
+  hardware.asahi = {
+    enable = true;
+    setupAsahiSound = false;
+    extractPeripheralFirmware = false;
+  };
+
   fileSystems."/" = {
     device = "/dev/disk/by-label/rehearsal-root";
     fsType = "ext4";
+    options = [ "defaults" ];
   };
 
-  # Allow a password during rehearsal only: the box has no SSH keys on
-  # first boot from the ISO. Revert before the Air install runbook.
-  services.openssh.settings.PasswordAuthentication = lib.mkForce true;
+  fileSystems."/boot/asahi" = {
+    device = "/dev/disk/by-partlabel/EFI";
+    fsType = "vfat";
+    options = [
+      "ro"
+      "nofail"
+      "noauto"
+    ];
+  };
+
+  services.logind.settings.Login = {
+    HandlePowerKey = "reboot";
+    HandlePowerKeyLongPress = "reboot";
+    HandleRebootKey = "reboot";
+    HandleSuspendKey = "ignore";
+    HandleHibernateKey = "ignore";
+    IdleAction = "ignore";
+  };
+
+  systemd.sleep.settings.Sleep = {
+    AllowSuspend = "no";
+    AllowHibernation = "no";
+    AllowHybridSleep = "no";
+    AllowSuspendThenHibernate = "no";
+  };
+
+  systemd.targets.sleep.enable = false;
+  systemd.targets.suspend.enable = false;
+  systemd.targets.hibernate.enable = false;
+  systemd.targets.hybrid-sleep.enable = false;
+
+  systemd.services.systemd-poweroff.serviceConfig.ExecStart = lib.mkForce [
+    ""
+    "${pkgs.systemd}/bin/systemctl --force --force reboot"
+  ];
+  systemd.services.systemd-halt.serviceConfig.ExecStart = lib.mkForce [
+    ""
+    "${pkgs.systemd}/bin/systemctl --force --force reboot"
+  ];
+
+  security.sudo.wheelNeedsPassword = false;
 
   users.users.rehearsal = {
     isNormalUser = true;
     extraGroups = [ "wheel" ];
-    initialPassword = "rehearsal"; # disposable box, provider-side reset
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIrDpszSSJT9ZfrkTp/pPvA9vfzV0QGizKDTP2HEBG4Q rehearsal-throwaway"
+    ];
   };
 }

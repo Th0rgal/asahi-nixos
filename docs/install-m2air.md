@@ -1,6 +1,6 @@
 # Printed Runbook — MacBook Air M2 Cutover (Gate G6)
 
-> **Rule (`docs/decisions.md` DR-3 / DR-5):** Complete the Scaleway `M2-M` dress rehearsal (`docs/runbook-scaleway.md`, Gates G4 & G5) as soon as `fr-par-1` capacity is restocked, or verify the identical `m1n1` -> U-Boot -> UEFI standalone stages below cleanly before writing the NixOS partition. Never enable `boot.loader.*` in NixOS on Apple Silicon; boot objects (`m1n1`, `U-Boot`, `vendorfw/firmware.cpio`) are owned exclusively by the Asahi installer on the Apple EFI System Partition.
+> **Rule (`docs/decisions.md` DR-3 / DR-5 / DR-12):** Complete the Scaleway `M2-L-ASAHI` dress rehearsal (`docs/runbook-scaleway.md`, Gates G4 & G5) before touching internal partitions, or verify the `m1n1` -> U-Boot -> UEFI standalone stages below cleanly before writing the NixOS partition. Never enable `boot.loader.*` in NixOS on Apple Silicon; boot objects (`m1n1`, `U-Boot`, `vendorfw/firmware.cpio`) are owned exclusively by the Asahi installer on the Apple EFI System Partition.
 
 ---
 
@@ -87,7 +87,7 @@ Record all outputs verbatim into `docs/logs/g6-<YYYY-MM-DD>.md`:
   - `systemctl status upower power-profiles-daemon macsmc-battery-thresholds` active; `cat /sys/class/power_supply/macsmc-battery/charge_control_end_threshold` returns `80`.
   - Close lid for 60s -> `journalctl -b -u systemd-suspend` confirms clean `s2idle` entry/resume, `hyprlock` locked before sleep, DPMS restored on wake, Wi-Fi (`brcmfmac` firmware supplicant) reconnects automatically.
 - [ ] **Omarchnix & Proof-Carrying Userspace:**
-  - `omarchnix audit` verifies 0 `sorryAx` and valid Ed25519/BLAKE3 receipts across the running system closure.
+  - `omarchnix audit --pubkey <owner-pubkey-hex>` (or `--allow-dev-keys` prior to pinning `security.omarchnix.trustedReceiptKeys` in `hosts/m2air.nix`) verifies `0 sorryAx` (`30` kernel axiom checks) and valid Ed25519/BLAKE3 receipts across `/run/current-system`.
 
 ---
 

@@ -213,7 +213,12 @@ pkgs.testers.runNixOSTest {
         check_json = json.loads(workstation.succeed(as_thomas("omarchnix check --json")).strip())
         assert check_json["ok"] is True, f"omarchnix check failed: {check_json!r}"
 
-        audit_json = json.loads(workstation.succeed(as_thomas("omarchnix audit --path /run/current-system --json")).strip())
+        audit_fail = json.loads(workstation.fail(as_thomas("omarchnix audit --path /run/current-system --json")).strip())
+        assert audit_fail["ok"] is False and audit_fail["error"] == "no_trusted_receipt_keys", (
+            f"expected fail-closed no_trusted_receipt_keys without pinned keys, got {audit_fail!r}"
+        )
+
+        audit_json = json.loads(workstation.succeed(as_thomas("omarchnix audit --path /run/current-system --allow-dev-keys --json")).strip())
         assert audit_json["ok"] is True and audit_json["verified_count"] >= 1, (
             f"expected >=1 verified receipt in /run/current-system, got {audit_json!r}"
         )

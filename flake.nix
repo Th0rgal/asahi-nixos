@@ -338,6 +338,11 @@
             inherit (nixpkgs) lib;
           };
 
+          receipt-trust = import ./tests/receipt-trust.nix {
+            inherit pkgs inputs self;
+            inherit (nixpkgs) lib;
+          };
+
           modules-eval =
             let
               standaloneNixos = nixpkgs.lib.nixosSystem {

@@ -17,7 +17,7 @@
 | `m2air` | `aarch64-linux` | Apple Silicon MacBook Air M2 (`J413`/`J415`) | Manual `m1n1` + U-Boot + vendorfw (DR-5), LUKS2 `cryptroot` + shared exFAT (DR-4), PipeWire `asahi-audio` DSP + `speakersafetyd`, 1.6x HiDPI + notch geometry |
 | `spark` | `aarch64-linux` | NVIDIA Grace / DGX Spark ARM64 server & workstation | UEFI `systemd-boot`, ARMv9/NEON/SVE2 `LeanNative` codegen, hardened headless or desktop profile |
 | `workstation` | `x86_64-linux` | AMD / Intel Linux desktop & cloud workstation | UEFI `systemd-boot`, KVM + `nixos-container` sandboxing, full Hyprland + `omarchy-shell` desktop |
-| `rehearsal` / `vm` | `aarch64-linux` | Scaleway Mac mini M2 & QEMU guests | Disposable BootROM dress rehearsal (DR-3) and CI/QEMU iteration |
+| `rehearsal` / `vm` | `aarch64-linux` | Scaleway `M2-L-ASAHI` Mac mini & QEMU guests | Disposable BootROM dress rehearsal with poweroff->reboot guard (DR-3 / DR-12) and CI/QEMU iteration |
 
 ---
 
@@ -32,7 +32,7 @@ Instead of forking Omarchy's themes or rewriting its QML shell, `omarchnix` trea
 
 ---
 
-## 3. Proof-Carrying Nix + `turbo-lean` Pipeline (DR-9)
+## 3. Proof-Carrying Nix + `turbo-lean` Pipeline (DR-9 / DR-13)
 
 Nix guarantees *reproducible derivation provenance* (inputs -> build script -> store hash), while Lean 4 guarantees *mathematical specification adherence*. `omarchnix` fuses both into **Proof-Carrying Store Paths**:
 
@@ -41,13 +41,13 @@ Lean 4 Source (lean-sys / TurboLean, 0 sorryAx)
         │
         ├─► Kernel Axiom Gate (collectAxioms ⊆ {propext, Quot.sound, Classical.choice})
         │
-        ├─► LeanNative Backend (aarch64 NEON pmull64/eor3u + LSE atomics / x86_64)
+        ├─► LeanNative Backend (native linux-arm64 armv8.2-crypto NEON pmull64 + LSE / x86_64)
         │         └──► ELF64 Binary (/nix/store/.../bin/<exe>)
         │
         └─► Signed Receipt (/nix/store/.../share/omarchnix/receipts/<exe>.receipt.json)
                   ├── interface_hash & receipt_blake3 (turbo-lean Schema v2)
-                  ├── binary_blake3 & target_isa ("aarch64-neon" | "x86_64-sse42")
-                  └── ed25519-v1 signature verified offline by `omarchnix audit`
+                  ├── binary_blake3 & target_isa ("aarch64-linux+armv8.2a+neon+pmull64" | "x86_64-linux+x86-64-v2+sse2+pclmulqdq")
+                  └── ed25519-v1 signature + optional external attestation verified offline by `omarchnix audit`
 ```
 
-Running `omarchnix audit` on any booted `omarchnix` machine traverses `nix-store -qR /run/current-system`, discovers every proof-carrying package in the closure, checks `0 sorryAx` and kernel-axiom invariants, recomputes the ELF binary's BLAKE3 hash, and verifies its Ed25519 signature offline in `< 10 ms`.
+Running `omarchnix audit --pubkey <hex64>` (or configured via `security.omarchnix.trustedReceiptKeys` with `system.preSwitchChecks.omarchnix-receipts`) traverses `nix-store -qR` over a candidate or active system closure, enforces mandatory critical package coverage, rejects hostile/duplicate/missing JSON receipt fields without `.getD` defaults, recomputes every ELF binary's BLAKE3 hash, and verifies Ed25519 signatures offline in `< 10 ms`. Unpinned closures fail closed unless `--allow-dev-keys` is passed explicitly for development builds.

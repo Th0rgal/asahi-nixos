@@ -96,20 +96,9 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
         ''
           lean-native compile-llvm \
             --input ${lib.escapeShellArg leanNativeInput} \
-            --arch macos-arm64 \
-            -o "$TMPDIR/lean_native_raw.ll"
-
-          grep -q '@llvm.aarch64.neon.pmull64' "$TMPDIR/lean_native_raw.ll"
-          grep -q '@llvm.aarch64.crypto.eor3u.v2i64' "$TMPDIR/lean_native_raw.ll"
-
-          sed \
-            -e 's/target datalayout = "e-m:o-/target datalayout = "e-m:e-/' \
-            -e 's/target triple = "arm64-apple-macosx[^"]*"/target triple = "aarch64-unknown-linux-gnu"/' \
-            -e 's/"target-cpu"="apple-m2" //' \
-            -e 's/"target-features"="+v8.5a,+neon,+fp-armv8,+fullfp16,+fp16fml,+dotprod,+lse,+aes,+sha2,+sha3,+rcpc"/"target-features"="+v8.2a,+neon,+fp-armv8,+fullfp16,+fp16fml,+dotprod,+lse,+aes,+sha2"/' \
-            -e 's/^\([[:space:]]*\)%eor3_vp_\([0-9]*\) = call <2 x i64> @llvm\.aarch64\.crypto\.eor3u\.v2i64(<2 x i64> %eor3_va_\([0-9]*\), <2 x i64> %eor3_vb_\([0-9]*\), <2 x i64> %eor3_vc_\([0-9]*\))$/\1%eor3_ab_\2 = xor <2 x i64> %eor3_va_\3, %eor3_vb_\4\n\1%eor3_vp_\2 = xor <2 x i64> %eor3_ab_\2, %eor3_vc_\5/' \
-            -e '/^declare <2 x i64> @llvm\.aarch64\.crypto\.eor3u\.v2i64/d' \
-            "$TMPDIR/lean_native_raw.ll" > .lake/build/lib/liblean_native_kernels.ll
+            --arch arm64 \
+            --isa armv8.2-crypto \
+            -o .lake/build/lib/liblean_native_kernels.ll
 
           ! grep -q '@llvm.aarch64.crypto.eor3u' .lake/build/lib/liblean_native_kernels.ll
           grep -q '@llvm.aarch64.neon.pmull64' .lake/build/lib/liblean_native_kernels.ll
@@ -119,10 +108,10 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
             -o "$TMPDIR/lean_native_kernels.o"
           ar rcs .lake/build/lib/liblean_native_kernels.a "$TMPDIR/lean_native_kernels.o"
 
-          # Also emit the canonical C-ABI header and verify LeanNative's Linux ELF64 static-lib driver.
           lean-native compile-static-lib \
             --input ${lib.escapeShellArg leanNativeInput} \
             --arch arm64 \
+            --isa armv8.2-crypto \
             --clang-bin "$(command -v clang)" \
             --ar-bin "$(command -v ar)" \
             -o "$TMPDIR/lean_native_driver_check.a" \

@@ -66,6 +66,7 @@ pkgs.runCommand "omarchnix-verified-lean-check"
       pkgs.coreutils
       pkgs.gnugrep
       pkgs.jq
+      pkgs.python3
       omarchnixCli
       receiptGate
       turboLean
@@ -122,11 +123,17 @@ pkgs.runCommand "omarchnix-verified-lean-check"
       and .signature_alg == "ed25519-v1"
       and (.ed25519_pubkey | length == 64)
       and (.ed25519_signature | length == 128)
-      and (.axiom_audit | length == 5)
+      and (.axiom_audit | length == 30)
       and (.axiom_audit | all(.[]; .certified_clean == true and .has_sorry_ax == false and (.disallowed_axioms | length == 0)))
     ' "$receipt_file" >/dev/null
 
-    omarchnix audit --path "${receiptGate}" --json > "$TMPDIR/pos_audit.json"
+    if omarchnix audit --path "${receiptGate}" --json > "$TMPDIR/unpinned_audit.json"; then
+      echo "ERROR: unpinned omarchnix audit without --allow-dev-keys unexpectedly passed" >&2
+      exit 1
+    fi
+    jq -e '.ok == false and .error == "no_trusted_receipt_keys"' "$TMPDIR/unpinned_audit.json" >/dev/null
+
+    omarchnix audit --path "${receiptGate}" --allow-dev-keys --json > "$TMPDIR/pos_audit.json"
     jq -e '
       .ok == true
       and .verified_count == 1
@@ -161,13 +168,13 @@ pkgs.runCommand "omarchnix-verified-lean-check"
     }
 
     stage_pkg "$TMPDIR/staged-clean"
-    omarchnix audit --path "$TMPDIR/staged-clean" --json > "$TMPDIR/staged_clean.json"
+    omarchnix audit --path "$TMPDIR/staged-clean" --allow-dev-keys --json > "$TMPDIR/staged_clean.json"
     jq -e '.ok == true and .verified_count == 1' "$TMPDIR/staged_clean.json" >/dev/null
 
     echo "[4/9] Reject tampered binary bytes (BLAKE3 mismatch)"
     stage_pkg "$TMPDIR/tamper-bin"
     printf '\x00' >> "$TMPDIR/tamper-bin/bin/omarchnix-receipt-gate"
-    if omarchnix audit --path "$TMPDIR/tamper-bin" --json > "$TMPDIR/tamper_bin.json"; then
+    if omarchnix audit --path "$TMPDIR/tamper-bin" --allow-dev-keys --json > "$TMPDIR/tamper_bin.json"; then
       echo "ERROR: tampered binary unexpectedly passed omarchnix audit" >&2
       exit 1
     fi
@@ -183,7 +190,7 @@ pkgs.runCommand "omarchnix-verified-lean-check"
       > "$TMPDIR/cotamper-bin/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json.tmp"
     mv "$TMPDIR/cotamper-bin/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json.tmp" \
       "$TMPDIR/cotamper-bin/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json"
-    if omarchnix audit --path "$TMPDIR/cotamper-bin" --json > "$TMPDIR/cotamper_bin.json"; then
+    if omarchnix audit --path "$TMPDIR/cotamper-bin" --allow-dev-keys --json > "$TMPDIR/cotamper_bin.json"; then
       echo "ERROR: co-tampered binary + .binary_blake3 unexpectedly passed omarchnix audit" >&2
       exit 1
     fi
@@ -197,7 +204,7 @@ pkgs.runCommand "omarchnix-verified-lean-check"
       > "$TMPDIR/tamper-sig/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json.tmp"
     mv "$TMPDIR/tamper-sig/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json.tmp" \
       "$TMPDIR/tamper-sig/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json"
-    if omarchnix audit --path "$TMPDIR/tamper-sig" --json > "$TMPDIR/tamper_sig.json"; then
+    if omarchnix audit --path "$TMPDIR/tamper-sig" --allow-dev-keys --json > "$TMPDIR/tamper_sig.json"; then
       echo "ERROR: corrupted signature unexpectedly passed omarchnix audit" >&2
       exit 1
     fi
@@ -210,7 +217,7 @@ pkgs.runCommand "omarchnix-verified-lean-check"
       > "$TMPDIR/tamper-iface/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json.tmp"
     mv "$TMPDIR/tamper-iface/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json.tmp" \
       "$TMPDIR/tamper-iface/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json"
-    if omarchnix audit --path "$TMPDIR/tamper-iface" --json > "$TMPDIR/tamper_iface.json"; then
+    if omarchnix audit --path "$TMPDIR/tamper-iface" --allow-dev-keys --json > "$TMPDIR/tamper_iface.json"; then
       echo "ERROR: tampered interface_hash unexpectedly passed omarchnix audit" >&2
       exit 1
     fi
@@ -228,7 +235,7 @@ pkgs.runCommand "omarchnix-verified-lean-check"
     echo "[8/9] Reject missing binary and symlinked-receipt binary swap in staged root"
     stage_pkg "$TMPDIR/missing-bin"
     rm -f "$TMPDIR/missing-bin/bin/omarchnix-receipt-gate"
-    if omarchnix audit --path "$TMPDIR/missing-bin" --json > "$TMPDIR/missing_bin.json"; then
+    if omarchnix audit --path "$TMPDIR/missing-bin" --allow-dev-keys --json > "$TMPDIR/missing_bin.json"; then
       echo "ERROR: staged receipt with deleted binary unexpectedly passed omarchnix audit" >&2
       exit 1
     fi
@@ -240,7 +247,7 @@ pkgs.runCommand "omarchnix-verified-lean-check"
     chmod 755 "$TMPDIR/symlink-swap/sw/bin/omarchnix-receipt-gate"
     printf '\x7f' >> "$TMPDIR/symlink-swap/sw/bin/omarchnix-receipt-gate"
     ln -s "$receipt_file" "$TMPDIR/symlink-swap/sw/share/omarchnix/receipts/omarchnix-receipt-gate.receipt.json"
-    if omarchnix audit --path "$TMPDIR/symlink-swap" --json > "$TMPDIR/symlink_swap.json"; then
+    if omarchnix audit --path "$TMPDIR/symlink-swap" --allow-dev-keys --json > "$TMPDIR/symlink_swap.json"; then
       echo "ERROR: symlinked store receipt with tampered sw/bin binary unexpectedly passed omarchnix audit" >&2
       exit 1
     fi
@@ -249,14 +256,130 @@ pkgs.runCommand "omarchnix-verified-lean-check"
 
     echo "[9/9] Reject empty directory by default; succeed only with --allow-empty"
     mkdir -p "$TMPDIR/empty-root"
-    if omarchnix audit --path "$TMPDIR/empty-root" --json > "$TMPDIR/empty_strict.json"; then
+    if omarchnix audit --path "$TMPDIR/empty-root" --allow-dev-keys --json > "$TMPDIR/empty_strict.json"; then
       echo "ERROR: empty directory without --allow-empty unexpectedly passed" >&2
       exit 1
     fi
     jq -e '.ok == false and .verified_count == 0' "$TMPDIR/empty_strict.json" >/dev/null
 
-    omarchnix audit --path "$TMPDIR/empty-root" --allow-empty --json > "$TMPDIR/empty_allowed.json"
+    omarchnix audit --path "$TMPDIR/empty-root" --allow-dev-keys --allow-empty --json > "$TMPDIR/empty_allowed.json"
     jq -e '.ok == true and .verified_count == 0' "$TMPDIR/empty_allowed.json" >/dev/null
+
+    "$bin_file" simd-diff | jq -e '.ok == true and .vectors == 4' >/dev/null
+    "$bin_file" check-plugin --schema 1 --id "dizziee.opencode-model-usage" --entrypoints "BarWidget.qml" | jq -e '.admitted == true' >/dev/null
+    if "$bin_file" check-plugin --schema 1 --id "omarchy.bar" --entrypoints "Bar.qml" >/dev/null; then exit 1; fi
+    if "$bin_file" check-plugin --schema 1 --id "evil.plugin" --entrypoints "../escape.qml" >/dev/null; then exit 1; fi
+    if "$bin_file" check-plugin --schema 1 --id "evil.plugin" --entrypoints "/etc/passwd" >/dev/null; then exit 1; fi
+
+    omarchnix sandbox check --backend bwrap --roots /workspace --mounts /workspace/src:rw,/nix/store:ro | jq -e '.admitted == true' >/dev/null
+    if omarchnix sandbox check --backend bwrap --roots /workspace --mounts /run/secrets/age:ro >/dev/null; then exit 1; fi
+    if omarchnix sandbox check --backend nixos-container --roots /workspace --mounts /home/thomas/.ssh:ro >/dev/null; then exit 1; fi
+    omarchnix sandbox check --backend bwrap --roots /workspace --mounts /home/thomas/.ssh:ro --allow ssh | jq -e '.admitted == true' >/dev/null
+    if omarchnix sandbox check --backend bwrap --roots /workspace --mounts /etc/shadow:ro >/dev/null; then exit 1; fi
+    if omarchnix sandbox check --backend bwrap --roots /workspace --mounts /nix/var/nix/daemon-socket/socket:ro >/dev/null; then exit 1; fi
+    if omarchnix sandbox check --backend bwrap --roots /workspace --mounts /var/tmp:rw >/dev/null; then exit 1; fi
+
+    python3 - "$bin_file" "$receipt_file" "$TMPDIR" <<'PY'
+    import json
+    import pathlib
+    import subprocess
+    import sys
+
+    gate, receipt_path, tmp = sys.argv[1:]
+    receipt = json.loads(pathlib.Path(receipt_path).read_text())
+    actual = receipt["binary_blake3"]
+    candidate = pathlib.Path(tmp) / "extraction-candidate.json"
+    count = 0
+
+    def check(text, expected_error=None, admitted=False):
+        global count
+        candidate.write_text(text)
+        result = subprocess.run(
+            [gate, "check-receipt", "--receipt", str(candidate),
+             "--actual-binary-blake3", actual, "--crypto-sig-ok", "1", "--json"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == (0 if admitted else 1), (text, result)
+        output = json.loads(result.stdout)
+        assert output["admitted"] == admitted, output
+        if expected_error is not None:
+            assert output.get("error") == expected_error, output
+        count += 1
+
+    check(json.dumps(receipt), admitted=True)
+    required = [
+        "schema_version", "mode", "forbidden_constructs_found", "zero_sorry",
+        "zero_native_decide", "sorry_ax_count", "codegen_backend", "receipt_blake3",
+        "interface_hash", "signature_alg", "ed25519_pubkey", "ed25519_signature",
+        "binary_blake3", "lean_native_archive_blake3", "per_file_interfaces",
+    ]
+    for key in required:
+        missing = dict(receipt)
+        del missing[key]
+        check(json.dumps(missing), "missing_field:" + key)
+        for wrong in [None, [], True if not isinstance(receipt[key], bool) else 0]:
+            malformed = dict(receipt)
+            malformed[key] = wrong
+            check(json.dumps(malformed))
+        value = json.dumps(receipt[key])
+        body = json.dumps(receipt)[1:]
+        check("{" + json.dumps(key) + ":" + value + "," + body, "duplicate_key:" + key)
+        escaped = "\\u%04x" % ord(key[0]) + key[1:]
+        check('{"' + escaped + '":' + value + ',' + body, "duplicate_key:" + key)
+        check("{" + json.dumps(key) + ":null," + body, "duplicate_key:" + key)
+
+    for key in ["schema_version", "forbidden_constructs_found", "sorry_ax_count"]:
+        for token in ["2.0", "0e0", "-0", "00", '"0"', "false"]:
+            base = dict(receipt)
+            del base[key]
+            check("{" + json.dumps(key) + ":" + token + "," + json.dumps(base)[1:])
+    for key in ["zero_sorry", "zero_native_decide"]:
+        for token in ["trux", "falsx", '"true"', "1"]:
+            base = dict(receipt)
+            del base[key]
+            check("{" + json.dumps(key) + ":" + token + "," + json.dumps(base)[1:])
+
+    for key in receipt["per_file_interfaces"]:
+        for replacement in [None, 1, False, []]:
+            changed = json.loads(json.dumps(receipt))
+            changed["per_file_interfaces"][key] = replacement
+            check(json.dumps(changed))
+        value = json.dumps(receipt["per_file_interfaces"][key])
+        for encoded in [json.dumps(key), '"\\u%04x%s"' % (ord(key[0]), key[1:])]:
+            nested = "{" + encoded + ":" + value + "," + json.dumps(receipt["per_file_interfaces"])[1:]
+            root = dict(receipt)
+            del root["per_file_interfaces"]
+            check('{"per_file_interfaces":' + nested + ',' + json.dumps(root)[1:], "duplicate_key:" + key)
+
+    for key, value in [
+        ("schema_version", 1), ("mode", "untrusted"), ("zero_sorry", False),
+        ("zero_native_decide", False), ("sorry_ax_count", 1),
+        ("forbidden_constructs_found", 1), ("codegen_backend", "C"),
+        ("ed25519_signature", "g" * 128), ("binary_blake3", "0" * 64),
+    ]:
+        changed = dict(receipt)
+        changed[key] = value
+        check(json.dumps(changed))
+    for prefix, suffix in [("[", "]"), ("", " trailing"), ("", "}"), ("", ",")]:
+        check(prefix + json.dumps(receipt) + suffix)
+    check(json.dumps(receipt)[:-1])
+
+    base = [gate, "check-receipt", "--receipt", receipt_path,
+            "--actual-binary-blake3", actual, "--crypto-sig-ok", "1", "--json"]
+    for extra in [["--receipt", receipt_path], ["--actual-binary-blake3", actual],
+                  ["--crypto-sig-ok", "0"], ["--crypto-sig-ok", "1"], ["--json"]]:
+        result = subprocess.run(base + extra, capture_output=True, text=True)
+        assert result.returncode == 2 and "duplicate argument:" in result.stderr, result
+        count += 1
+    for flag in ["--receipt", "--actual-binary-blake3", "--crypto-sig-ok"]:
+        args = base.copy()
+        index = args.index(flag)
+        del args[index:index + 2]
+        result = subprocess.run(args, capture_output=True, text=True)
+        assert result.returncode == 2 and "is required" in result.stderr, result
+        count += 1
+    print(f"Strict receipt extraction/policy: {count} cases passed")
+    PY
 
     cp "$TMPDIR/pos_audit.json" "$out"
   ''
