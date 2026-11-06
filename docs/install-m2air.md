@@ -1,40 +1,97 @@
-# Runbook — MacBook Air M2 install (gate G6)
+# Printed Runbook — MacBook Air M2 Cutover (Gate G6)
 
-Do not start until G1–G5 are green and logged.
+> **Rule (`docs/decisions.md` DR-3 / DR-5):** Complete the Scaleway `M2-M` dress rehearsal (`docs/runbook-scaleway.md`, Gates G4 & G5) as soon as `fr-par-1` capacity is restocked, or verify the identical `m1n1` -> U-Boot -> UEFI standalone stages below cleanly before writing the NixOS partition. Never enable `boot.loader.*` in NixOS on Apple Silicon; boot objects (`m1n1`, `U-Boot`, `vendorfw/firmware.cpio`) are owned exclusively by the Asahi installer on the Apple EFI System Partition.
 
-## 0. Preconditions
+---
 
-- [ ] All gates G1–G5 passed with logs in `docs/logs/`
-- [ ] Time Machine backup of the Air, verified
-- [ ] macOS updated to latest (firmware baseline)
-- [ ] Free disk: shrink macOS APFS container to ~120 GB in Disk Utility
-- [ ] Create the ~150 GB exFAT partition in Disk Utility
-      (name: `shared`, scheme: GUID, FS: exFAT)
+## 0. Pre-Cutover Checklist (in macOS)
 
-## 1. Install (in macOS)
+- [ ] **CI Artifacts Verified:** `main` CI run green across all jobs; download `installer-iso` artifact and verify SHA-256 checksum matches `docs/logs/g2-2026-11-06.md` (or latest `main` run).
+- [ ] **Verified Time Machine Backup:** Complete APFS snapshot + external Time Machine backup verified readable on another volume.
+- [ ] **macOS Firmware Baseline:** Update macOS to latest point release so `iBoot` and `vendorfw` match `linux-asahi` (`7.2.15`) expectations.
+- [ ] **APFS Resize (DR-4, 1 TB NVMe):**
+  ```console
+  # Shrink macOS APFS container leaving ~880 GB free for shared exFAT + NixOS LUKS2
+  diskutil apfs resizeContainer disk0s2 120G
+  ```
+- [ ] **Prepare USB Installer Stick:** Flash `nixos-*-aarch64-linux.iso` to a USB-C drive (`/dev/diskN` external ONLY — double-check `diskutil list external`):
+  ```console
+  diskutil unmountDisk /dev/diskN
+  sudo dd if=nixos-26.11.20261103.1d06008-aarch64-linux.iso of=/dev/rdiskN bs=4m status=progress
+  sync
+  ```
 
-Two known-good paths — DR-1:
+---
 
-- **Path A (NixOS target):** Asahi installer per
-  `runbook-scaleway.md` steps 2–3, then the NixOS ISO built from this
-  flake; partition the free space with LUKS2 + ext4, install the
-  `m2air` closure.
-- **Path B (fallback, if Path A stalls):** the Omarchy Mac installer,
-  dual-boot, revisit Nix later (DR-1).
+## 1. Asahi UEFI Standalone Bootstrap (in macOS)
 
-## 2. First boot checks
+1. Run the upstream Asahi installer to extract vendor firmware and install the signed `m1n1` + U-Boot UEFI stub without installing Fedora/Arch:
+   ```console
+   curl https://alx.sh | sh
+   ```
+2. Choose **UEFI environment only (m1n1 + U-Boot + ESP)** in the free space after `disk0s2` (`macOS`), naming the boot entry `omarchnix`.
+3. Follow the prompt to shut down, **press and hold Touch ID / Power** until *"Loading startup options..."* appears, select `omarchnix` under Startup Options, and complete `bputil` 1TR step when prompted.
+4. Plug in the USB-C NixOS installer drive; U-Boot (`2026.07-2-asahi`) auto-boots GRUB EFI from USB into the live NixOS `aarch64-linux` installer with `/boot/vendorfw/firmware.cpio` available on the Asahi ESP.
 
-- [ ] Boot picker (hold power) shows both macOS and Linux
-- [ ] Wi-Fi, keyboard, trackpad, display (incl. brightness) work
-- [ ] Speaker + mic (ALS UCM) — `hardware.asahi.audio = "speakers"`
-- [ ] Sleep/wake, battery reporting
-- [ ] USB-C: at least charge + one device
-- [ ] `shared` exFAT partition mounts read-write on both OSes
-- [ ] LUKS unlock at boot; emergency: note the recovery path
-- [ ] macOS partition still boots and can run firmware updates
+*(Fallback DR-1 Path B: if standalone UEFI stalls, run the Omarchy Mac installer for dual-boot and revisit NixOS cutover without touching macOS).*
 
-## 3. Aftercare
+---
 
-- [ ] Firmware updates: boot macOS monthly, run Software Update, then
-      the Asahi "Rebuild vendor firmware package" step (DR-5)
-- [ ] `docs/logs/g6-<date>.md` with results; update the status matrix
+## 2. Partitioning Free Space & Installing `m2air` (in Live NixOS ISO)
+
+> **Safety Note:** `modules/disko-m2air.nix` carries a `preCreateHook` refusing whole-disk GPT destruction whenever Apple Silicon `iBootSystemContainer` / `RecoveryOSContainer` (`AF0A`) partitions exist on `/dev/nvme0n1`. On live dual-boot Apple Silicon hardware, create the two Linux partitions (`shared` + `cryptroot`) only in the unallocated free space after the Asahi UEFI ESP (`nvme0n1p4`), never wiping `nvme0n1` GPT!
+
+1. Connect to Wi-Fi in the live environment (`impala` or `iwctl` / `nmcli device wifi connect <SSID> --ask`).
+2. Inspect exact partition numbers (`lsblk -o NAME,PARTLABEL,FSTYPE,SIZE /dev/nvme0n1`):
+   - Confirm `iBootSystemContainer`, `macOS` APFS (~120 GB), Asahi `EFI` (`ESP`, ~512 MB, FAT32 containing `m1n1/`, `efi/`, and `vendorfw/firmware.cpio`), and `RecoveryOSContainer`.
+3. Create the `shared` exFAT shelf (`150G`, label `shared`) and `cryptroot` (`LUKS2` + `ext4`, label `nixos`) in the free space using `gdisk /dev/nvme0n1` (`n` -> `+150G` type `0700` name `shared`; `n` -> remaining space type `8309` name `cryptroot`), then format and mount matching `modules/disko-m2air.nix` labels:
+   ```console
+   # Replace p5 / p6 / p4 with exact partition numbers verified in lsblk!
+   mkfs.exfat -n shared /dev/nvme0n1p5
+   cryptsetup luksFormat --type luks2 --pbkdf argon2id --label cryptroot-luks /dev/nvme0n1p6
+   cryptsetup open --allow-discards /dev/nvme0n1p6 cryptroot
+   mkfs.ext4 -L nixos /dev/mapper/cryptroot
+
+   mount /dev/mapper/cryptroot /mnt
+   mkdir -p /mnt/boot /mnt/mnt/shared /mnt/var/lib/sops-nix
+   mount -o umask=0077 /dev/nvme0n1p4 /mnt/boot
+   mount /dev/nvme0n1p5 /mnt/mnt/shared
+   ```
+4. Verify `/mnt/boot/vendorfw/firmware.cpio` is intact (`ls -lh /mnt/boot/vendorfw/firmware.cpio`).
+5. Copy the owner `sops-nix` age secret key (`0600`) to `/mnt/var/lib/sops-nix/key.txt` and provision `thomas`'s SSH authorized key.
+6. Install the `m2air` system closure:
+   ```console
+   nixos-install --flake github:Th0rgal/omarchnix#m2air --no-root-passwd
+   nixos-enter --root /mnt -c 'passwd thomas'
+   umount -R /mnt
+   cryptsetup close cryptroot
+   reboot
+   ```
+
+---
+
+## 3. First-Boot Hardware Polish Verification (`m2air`)
+
+Record all outputs verbatim into `docs/logs/g6-<YYYY-MM-DD>.md`:
+
+- [ ] **Dual-Boot Picker & Startup Disk:** Hold power button -> both `Macintosh HD` and `omarchnix` boot cleanly; `sudo asahi-bless --list-volumes` enumerates both volumes from Linux.
+- [ ] **LUKS2 Initrd Unlock & Mounts:** Unlock `cryptroot` at boot; verify `findmnt / /boot /mnt/shared` and read/write test on `/mnt/shared` from both NixOS and macOS.
+- [ ] **Display, HiDPI (1.6x) & Notch Geometry:**
+  - `hyprctl monitors -j` shows `eDP-1` at `2560x1664@60Hz`, scale `1.60` (`1600x1040` logical), `xwayland.force_zero_scaling = true`.
+  - `/usr/share/omarchy-platform/display-cutouts.json` present (`300x64` notch reserve for `omarchy-shell` / top bar).
+  - `brightnessctl` adjusts Apple DCP backlight (`XF86MonBrightnessUp/Down`) and keyboard backlight (`*::kbd_backlight`).
+- [ ] **Audio DSP & Speaker Protection (`asahi-audio` 4.1 + `speakersafetyd` 3.0):**
+  - `systemctl status speakersafetyd` is **active (running)** (never bypass thermal protection).
+  - `wpctl status` shows `MacBook Air J413` / `J415` DSP graph (`bankstown-lv2`, `lsp-plugins`, `triforce-lv2` via PipeWire filter-chain) + internal mic array.
+- [ ] **Power, Battery Thresholds & `s2idle` Sleep:**
+  - `systemctl status upower power-profiles-daemon macsmc-battery-thresholds` active; `cat /sys/class/power_supply/macsmc-battery/charge_control_end_threshold` returns `80`.
+  - Close lid for 60s -> `journalctl -b -u systemd-suspend` confirms clean `s2idle` entry/resume, `hyprlock` locked before sleep, DPMS restored on wake, Wi-Fi (`brcmfmac` firmware supplicant) reconnects automatically.
+- [ ] **Omarchnix & Proof-Carrying Userspace:**
+  - `omarchnix audit` verifies 0 `sorryAx` and valid Ed25519/BLAKE3 receipts across the running system closure.
+
+---
+
+## 4. Ongoing Firmware Maintenance (DR-5)
+
+1. Boot macOS after Apple point updates and install macOS Software Update.
+2. In macOS Terminal, run `curl https://alx.sh | sh` and select **Rebuild vendor firmware package** so `/boot/vendorfw/firmware.cpio` stays synchronized with system firmware.
