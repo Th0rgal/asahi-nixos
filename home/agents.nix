@@ -140,13 +140,27 @@ let
     "proofs-and-audit.md" = ''
       # Proof-Carrying Lean 4 Userspace & `omarchnix audit`
 
-      Security-critical `omarchnix` tools built with `pkgs.omarchnix.buildVerifiedLeanSys` carry:
+      Security-critical `omarchnix` tools built with `pkgs.omarchnix.buildVerifiedLeanSys` (such as `omarchnix-receipt-gate`) enforce four independent build- and install-time gates:
 
-      1. **Zero `sorryAx` & kernel axiom gate:** Only `{propext, Quot.sound, Classical.choice}` permitted.
-      2. **Architecture-verified `LeanNative` codegen:** Verified ARMv8.2+/NEON SIMD on `aarch64-linux` and x86-64 ELF64 verification on `x86_64-linux`.
-      3. **Signed Schema v2 receipts:** `<out>/share/omarchnix/receipts/<name>.receipt.json` binding BLAKE3 binary + receipt digests with `ed25519-v1` signatures.
+      1. **Zero `sorryAx` & kernel axiom gate:** `TurboLean.Inspector` inspects `Lean.collectAxioms` across all exported specifications and permits only `{propext, Quot.sound, Classical.choice}` (`0 sorryAx`, `0 Lean.trustCompiler`, `0 Lean.ofReduceBool`, `0 native_decide`).
+      2. **Non-vacuity & tightness audit:** `turbo-lean audit-spec` requires `0` vacuous or trivial theorems and `>= 1` tight functional equivalence theorems (`admitReceipt_eq_kernel`).
+      3. **Architecture-verified `LeanNative` codegen:** Compiles hot pure-Lean kernels (`OmarchnixGate/Kernel.lean`) through `LeanNative` LLVM 18 IR into `liblean_native_kernels.a`, emitting verified ARMv8.2+ NEON `pmull` SIMD on `aarch64-linux` and SSE2/PCLMULQDQ ELF64 `EM_X86_64` code on `x86_64-linux`, verified via `readelf` + `nm` anchor symbols + runtime `self-test`.
+      4. **Signed Schema v2 receipts + co-tampering defense:** Shrinks ELF RPATHs before hashing, records `BuildArtifacts/BinaryBlake3_<hex>.lean` and `BuildArtifacts/ArchiveBlake3_<hex>.lean` inside signed `per_file_interfaces`, emits `<out>/share/omarchnix/receipts/<name>.receipt.json` signed with `ed25519-v1`, and re-verifies zero binary BLAKE3 drift in `postFixup`.
 
-      Run `omarchnix audit` (or `omarchnix audit --path /run/current-system --json`) to verify every proof-carrying binary in a closure offline.
+      Default deterministic signing seeds are public test/build inputs, not operator authentication. Their signatures detect corruption relative to a trusted build artifact but anyone can regenerate them. Use an independently trusted public key and externally isolated release signing for operator authority; never put a private signing seed in Nix expressions or the store. `receiptSigningSeedHex` is only appropriate for public deterministic/test seeds. The admission proof covers the Boolean policy, not the parser, compiler, cryptographic implementation, or whole operating system.
+
+      ## Offline Closure Audit Commands
+
+      ```bash
+      # Verify all proof-carrying receipts in /run/current-system
+      omarchnix audit
+
+      # Machine-readable audit of an explicit store path or staged package root
+      omarchnix audit --path /run/current-system --json
+
+      # Enforce an out-of-band operator/CI Ed25519 public key (64-char hex)
+      omarchnix audit --path /run/current-system --pubkey <ed25519_pubkey_hex> --json
+      ```
     '';
   };
 

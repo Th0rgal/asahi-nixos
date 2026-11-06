@@ -1,0 +1,13 @@
+{"version": "1.3.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "«lean-sys»",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": ".lake/packages/lean-sys",
+   "configFile": "lakefile.lean"}],
+ "name": "«omarchnix-receipt-gate»",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

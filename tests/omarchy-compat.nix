@@ -206,14 +206,21 @@ pkgs.testers.runNixOSTest {
             workstation.succeed(f"test -f {skill_dir}/SKILL.md")
             workstation.succeed(f"test -f {skill_dir}/themes.md")
             workstation.succeed(f"test -f {skill_dir}/shell-and-plugins.md")
+            workstation.succeed(f"test -f {skill_dir}/proofs-and-audit.md")
         workstation.succeed("test -f /home/thomas/.config/opencode/opencode.json")
         workstation.succeed("test -f /home/thomas/.config/opencode/cli.json")
 
         check_json = json.loads(workstation.succeed(as_thomas("omarchnix check --json")).strip())
         assert check_json["ok"] is True, f"omarchnix check failed: {check_json!r}"
 
+        audit_json = json.loads(workstation.succeed(as_thomas("omarchnix audit --path /run/current-system --json")).strip())
+        assert audit_json["ok"] is True and audit_json["verified_count"] >= 1, (
+            f"expected >=1 verified receipt in /run/current-system, got {audit_json!r}"
+        )
+
         status_json = json.loads(workstation.succeed(as_thomas("omarchnix status --json")).strip())
         assert status_json["shellRunning"] is True, f"expected shellRunning=True, got {status_json!r}"
+        assert status_json["verifiedReceipts"] >= 1, f"expected verifiedReceipts>=1, got {status_json!r}"
         assert len(status_json["agentSkills"]) == 4, f"expected 4 agent skill dirs, got {status_json!r}"
   '';
 }
