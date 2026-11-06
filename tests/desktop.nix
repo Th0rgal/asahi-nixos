@@ -112,6 +112,7 @@ pkgs.testers.runNixOSTest {
       home-manager = {
         useGlobalPkgs = true;
         useUserPackages = true;
+        extraSpecialArgs = { inherit inputs; };
         users.thomas = import ../home;
       };
 

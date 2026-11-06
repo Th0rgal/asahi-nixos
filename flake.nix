@@ -24,6 +24,21 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    omarchy = {
+      url = "github:omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf";
+      flake = false;
+    };
+
+    omarchy-plugin-marketplace = {
+      url = "github:omacom/omarchy-plugin-marketplace/d2a854554c778b06911f6c878d9ea0d4522c4a14";
+      flake = false;
+    };
+
+    omarchy-plugin-opencode-usage = {
+      url = "github:JJDizz1L/dizziee.opencode-model-usage/95a0f856d704e12915888dca7ec093e5df3009d9";
+      flake = false;
+    };
   };
 
   outputs =
@@ -40,6 +55,49 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
+      omarchyLib = import ./lib/omarchy.nix {
+        inherit (nixpkgs) lib;
+        omarchySrc = inputs.omarchy;
+      };
+
+      omarchnixOverlay =
+        final: _prev:
+        let
+          omarchyShell = import ./pkgs/omarchy-shell.nix {
+            inherit (final) lib;
+            pkgs = final;
+            omarchySrc = inputs.omarchy;
+            marketplaceSrc = inputs.omarchy-plugin-marketplace;
+          };
+          cli = import ./pkgs/omarchnix-cli.nix {
+            inherit (final) lib;
+            pkgs = final;
+            inherit omarchyShell;
+            marketplaceSrc = inputs.omarchy-plugin-marketplace;
+          };
+        in
+        {
+          omarchnix = {
+            inherit cli;
+            omarchy-shell = omarchyShell;
+            omarchySrc = inputs.omarchy;
+            marketplaceSrc = inputs.omarchy-plugin-marketplace;
+            importTheme =
+              arg:
+              omarchyLib.importTheme (
+                if builtins.isAttrs arg && !(arg ? outPath) then
+                  { pkgs = final; } // arg
+                else
+                  {
+                    theme = arg;
+                    pkgs = final;
+                  }
+              );
+            themes = omarchyLib.allBundledThemes final;
+            buildPlugin = args: omarchyLib.buildPlugin ({ pkgs = final; } // args);
+          };
+        };
+
       mkNixos =
         {
           system ? "aarch64-linux",
@@ -54,7 +112,10 @@
           };
           modules = modules ++ [
             {
-              nixpkgs.overlays = nixpkgs.lib.optionals withAsahiOverlay [
+              nixpkgs.overlays = [
+                omarchnixOverlay
+              ]
+              ++ nixpkgs.lib.optionals withAsahiOverlay [
                 apple-silicon-support.overlays.default
               ];
               nix.registry.nixpkgs.flake = nixpkgs;
@@ -63,6 +124,15 @@
         };
     in
     {
+      lib = {
+        omarchy = omarchyLib;
+      };
+
+      overlays = {
+        omarchnix = omarchnixOverlay;
+        default = omarchnixOverlay;
+      };
+
       nixosModules = {
         omarchnix = import ./modules/omarchnix.nix;
         default = self.nixosModules.omarchnix;
@@ -128,11 +198,14 @@
 
       # Asahi/NixOS installer ISO (via nixos-apple-silicon's
       # mkInstallerBootstrapCustom; built natively on ubuntu-24.04-arm in CI
-      # using the nixos-apple-silicon binary cache).
+      # using the nixos-apple-silicon binary cache) + Omarchy compatibility packages.
       packages = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ omarchnixOverlay ];
+          };
           diskoSrc = inputs.disko;
         in
         rec {
@@ -160,6 +233,11 @@
                 exec "${libexec}/disko" "$@"
               '';
             };
+          omarchy-shell = pkgs.omarchnix.omarchy-shell;
+          omarchnix = pkgs.omarchnix.cli;
+          plugin-opencode-model-usage = pkgs.omarchnix.buildPlugin {
+            src = inputs.omarchy-plugin-opencode-usage;
+          };
           installer-bootstrap = apple-silicon-support.lib.mkInstallerBootstrapCustom { inherit system; };
           default = installer-bootstrap;
         }
@@ -168,7 +246,10 @@
       checks = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ omarchnixOverlay ];
+          };
           diskoEval =
             (nixpkgs.lib.nixosSystem {
               inherit system;
@@ -208,11 +289,19 @@
             vmConfig = self.nixosConfigurations.vm.config;
           };
 
+          omarchy-compat = import ./tests/omarchy-compat.nix {
+            inherit pkgs inputs omarchyLib;
+            inherit (nixpkgs) lib;
+            self = self;
+          };
+
           modules-eval =
             let
               standaloneNixos = nixpkgs.lib.nixosSystem {
                 inherit system;
+                specialArgs = { inherit inputs; };
                 modules = [
+                  { nixpkgs.overlays = [ omarchnixOverlay ]; }
                   self.nixosModules.omarchnix
                   inputs.home-manager.nixosModules.home-manager
                   {
@@ -223,6 +312,17 @@
                       desktop = {
                         enable = true;
                         user = "alice";
+                        theme = "catppuccin";
+                        shellBackend = "omarchy-shell";
+                      };
+                    };
+                    home-manager.users.alice = {
+                      programs.omarchnix.plugins.locked."dizziee.opencode-model-usage" = {
+                        package = pkgs.omarchnix.buildPlugin {
+                          src = inputs.omarchy-plugin-opencode-usage;
+                        };
+                        enable = true;
+                        section = "right";
                       };
                     };
                     fileSystems."/" = {
@@ -246,6 +346,8 @@
             assert standaloneNixos.config.boot.loader.systemd-boot.enable == true;
             assert
               standaloneNixos.config.home-manager.users.alice.wayland.windowManager.hyprland.enable == true;
+            assert standaloneNixos.config.home-manager.users.alice.programs.waybar.enable == false;
+            assert standaloneNixos.config.home-manager.users.alice.systemd.user.services ? omarchy-shell;
             assert self.nixosConfigurations.spark.pkgs.stdenv.hostPlatform.system == "aarch64-linux";
             assert self.nixosConfigurations.workstation.pkgs.stdenv.hostPlatform.system == "x86_64-linux";
             pkgs.runCommand "omarchnix-modules-eval" { } ''

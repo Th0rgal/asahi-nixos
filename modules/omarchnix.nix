@@ -3,10 +3,32 @@
   lib,
   options,
   pkgs,
+  inputs ? { },
   ...
 }:
 let
   cfg = config.omarchnix;
+  omarchnixCliPkg =
+    if (pkgs ? omarchnix) && (pkgs.omarchnix ? cli) then
+      pkgs.omarchnix.cli
+    else if inputs ? omarchy then
+      let
+        marketplaceSrc = inputs.omarchy-plugin-marketplace or null;
+        omarchyShell = import ../pkgs/omarchy-shell.nix {
+          inherit lib pkgs marketplaceSrc;
+          omarchySrc = inputs.omarchy;
+        };
+      in
+      import ../pkgs/omarchnix-cli.nix {
+        inherit
+          lib
+          pkgs
+          omarchyShell
+          marketplaceSrc
+          ;
+      }
+    else
+      null;
 in
 {
   imports = [
@@ -68,6 +90,15 @@ in
         default = "tokyo-night";
         description = "Default Omarchy theme name passed into Home Manager.";
       };
+
+      shellBackend = lib.mkOption {
+        type = lib.types.enum [
+          "waybar"
+          "omarchy-shell"
+        ];
+        default = "waybar";
+        description = "Default desktop bar/panel backend passed into Home Manager (`omarchy-shell` or `waybar`).";
+      };
     };
   };
 
@@ -77,11 +108,17 @@ in
         home-manager = {
           useGlobalPkgs = lib.mkDefault true;
           useUserPackages = lib.mkDefault true;
+          extraSpecialArgs = lib.optionalAttrs (inputs != { }) {
+            inherit inputs;
+          };
           users.${cfg.desktop.user} =
             { ... }:
             {
               imports = [ ../home ];
-              programs.omarchnix.theme.name = lib.mkDefault cfg.desktop.theme;
+              programs.omarchnix = {
+                theme.name = lib.mkDefault cfg.desktop.theme;
+                shell.backend = lib.mkDefault cfg.desktop.shellBackend;
+              };
             };
         };
       }
@@ -108,7 +145,8 @@ in
         pkgs.helix
         pkgs.jq
         pkgs.ripgrep
-      ];
+      ]
+      ++ lib.optional (omarchnixCliPkg != null) omarchnixCliPkg;
 
       nix.settings = {
         experimental-features = [
@@ -157,6 +195,7 @@ in
       };
 
       security.pam.services.hyprlock = { };
+      security.pam.services.omarchy-lock-password = { };
       security.polkit.enable = true;
     })
   ];

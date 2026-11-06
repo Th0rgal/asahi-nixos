@@ -4,6 +4,7 @@
     enable = true;
     settings = {
       main = {
+        include = "~/.local/state/omarchy/current/theme/foot.ini";
         term = "xterm-256color";
         font = "${theme.fonts.mono.name}:size=${toString theme.fonts.mono.size}";
         dpi-aware = "auto";
