@@ -26,8 +26,12 @@ jobs:
       - name: Evaluate all hosts
         run: |
           nix eval .#nixosConfigurations.m2air.config.system.build.toplevel.drvPath --raw
+          nix eval .#nixosConfigurations.spark.config.system.build.toplevel.drvPath --raw
+          nix eval .#nixosConfigurations.workstation.config.system.build.toplevel.drvPath --raw
           nix eval .#nixosConfigurations.rehearsal.config.system.build.toplevel.drvPath --raw
           nix eval .#nixosConfigurations.vm.config.system.build.toplevel.drvPath --raw
+          nix eval .#checks.x86_64-linux.modules-eval.drvPath --raw
+          nix eval .#checks.aarch64-linux.modules-eval.drvPath --raw
 
   format:
     runs-on: ubuntu-latest

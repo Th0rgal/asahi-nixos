@@ -1,0 +1,163 @@
+{
+  config,
+  lib,
+  options,
+  pkgs,
+  ...
+}:
+let
+  cfg = config.omarchnix;
+in
+{
+  imports = [
+    ./hardware-m2air.nix
+    ./hardening.nix
+    ./containers.nix
+    ./secrets.nix
+  ];
+
+  options.omarchnix = {
+    enable = lib.mkEnableOption "omarchnix reusable NixOS workstation & server module (Apple Silicon Asahi, NVIDIA Grace / DGX Spark, and x86_64-linux)";
+
+    profile = lib.mkOption {
+      type = lib.types.enum [
+        "asahi"
+        "spark"
+        "workstation"
+        "vm"
+      ];
+      default = "workstation";
+      description = ''
+        Hardware/boot profile:
+        - `asahi`: Apple Silicon (M-series) external BootROM/m1n1/U-Boot boot chain (DR-5: boot.loader.* disabled).
+        - `spark`: ARM64 (`aarch64-linux`) UEFI server/workstation (e.g. NVIDIA Grace / DGX Spark) with systemd-boot.
+        - `workstation`: Generic `x86_64-linux` or `aarch64-linux` UEFI workstation with systemd-boot.
+        - `vm`: QEMU/KVM virtual machine target with systemd-boot.
+      '';
+    };
+
+    hardening.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable defense-in-depth hardening (default-deny firewall, key-only AppArmor-confined sshd, wheel-only sudo, kernel sysctls).";
+    };
+
+    containers.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Enable user-namespaced, network-isolated dev-untrusted NixOS container + bubblewrap.";
+    };
+
+    secrets.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Enable sops-nix age secret decryption wiring.";
+    };
+
+    desktop = {
+      enable = lib.mkEnableOption "omarchnix Hyprland Wayland desktop stack";
+
+      user = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Primary desktop user account to wire into Home Manager when non-null.";
+      };
+
+      theme = lib.mkOption {
+        type = lib.types.str;
+        default = "tokyo-night";
+        description = "Default Omarchy theme name passed into Home Manager.";
+      };
+    };
+  };
+
+  config = lib.mkMerge [
+    (lib.optionalAttrs (options ? home-manager) (
+      lib.mkIf (cfg.enable && cfg.desktop.enable && cfg.desktop.user != null) {
+        home-manager = {
+          useGlobalPkgs = lib.mkDefault true;
+          useUserPackages = lib.mkDefault true;
+          users.${cfg.desktop.user} =
+            { ... }:
+            {
+              imports = [ ../home ];
+              programs.omarchnix.theme.name = lib.mkDefault cfg.desktop.theme;
+            };
+        };
+      }
+    ))
+
+    (lib.mkIf cfg.enable {
+      time.timeZone = lib.mkDefault "Europe/Paris";
+      i18n.defaultLocale = lib.mkDefault "en_US.UTF-8";
+      console.keyMap = lib.mkDefault "fr";
+
+      services.openssh = {
+        enable = lib.mkDefault true;
+        settings = {
+          PasswordAuthentication = lib.mkDefault false;
+          KbdInteractiveAuthentication = lib.mkDefault false;
+        };
+      };
+
+      environment.variables.EDITOR = "hx";
+      programs.zsh.enable = lib.mkDefault true;
+
+      environment.systemPackages = [
+        pkgs.git
+        pkgs.helix
+        pkgs.jq
+        pkgs.ripgrep
+      ];
+
+      nix.settings = {
+        experimental-features = [
+          "nix-command"
+          "flakes"
+        ];
+        auto-optimise-store = lib.mkDefault true;
+      };
+
+      system.stateVersion = lib.mkDefault "25.05";
+    })
+
+    (lib.mkIf (cfg.enable && cfg.profile == "asahi") {
+      boot.loader.systemd-boot.enable = false;
+      boot.loader.grub.enable = false;
+      boot.loader.efi.canTouchEfiVariables = false;
+
+      nix.settings = {
+        substituters = [ "https://nixos-apple-silicon.cachix.org" ];
+        trusted-public-keys = [
+          "nixos-apple-silicon.cachix.org-1:8psDu5SA5dAD7qA0zMy5UT292TxeEPzIz8VVEr2Js20="
+        ];
+      };
+    })
+
+    (lib.mkIf (cfg.enable && cfg.profile != "asahi") {
+      boot.loader.systemd-boot.enable = lib.mkDefault true;
+      boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
+    })
+
+    (lib.mkIf (cfg.enable && cfg.profile == "spark") {
+      zramSwap = {
+        enable = lib.mkDefault true;
+        algorithm = lib.mkDefault "zstd";
+        memoryPercent = lib.mkDefault 25;
+      };
+    })
+
+    (lib.mkIf (cfg.enable && cfg.desktop.enable) {
+      hardware.graphics.enable = lib.mkDefault true;
+
+      programs.hyprland = {
+        enable = true;
+        withUWSM = true;
+        xwayland.enable = true;
+      };
+
+      security.pam.services.hyprlock = { };
+      security.polkit.enable = true;
+    })
+  ];
+}
