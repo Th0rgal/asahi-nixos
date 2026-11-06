@@ -351,7 +351,7 @@
             assert self.nixosConfigurations.spark.pkgs.stdenv.hostPlatform.system == "aarch64-linux";
             assert self.nixosConfigurations.workstation.pkgs.stdenv.hostPlatform.system == "x86_64-linux";
             pkgs.runCommand "omarchnix-modules-eval" { } ''
-              echo "${standaloneNixos.config.system.build.toplevel.drvPath}" > "$out"
+              echo "${builtins.unsafeDiscardStringContext standaloneNixos.config.system.build.toplevel.drvPath}" > "$out"
             '';
         }
       );

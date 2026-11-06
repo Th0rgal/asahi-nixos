@@ -62,6 +62,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Reclaim runner disk space for NixOS VM checks
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost
+          df -h /
       - name: Enable KVM access
         run: |
           if [ -e /dev/kvm ]; then
@@ -71,6 +80,7 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            auto-optimise-store = true
             system-features = kvm nixos-test benchmark big-parallel
       - name: Run NixOS checks
         run: |
