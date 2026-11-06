@@ -1,5 +1,5 @@
 {
-  description = "NixOS on Apple Silicon (Asahi) for a MacBook Air M2 — configs, rehearsal targets, and install runbooks";
+  description = "omarchnix — Proof-carrying, declarative Omarchy-compatible NixOS & Home Manager workstation stack for Apple Silicon (Asahi), DGX Spark (aarch64-linux), and x86_64-linux";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -43,6 +43,7 @@
       mkNixos =
         {
           system ? "aarch64-linux",
+          withAsahiOverlay ? true,
           modules,
         }:
         nixpkgs.lib.nixosSystem {
@@ -53,13 +54,25 @@
           };
           modules = modules ++ [
             {
-              nixpkgs.overlays = [ apple-silicon-support.overlays.default ];
+              nixpkgs.overlays = nixpkgs.lib.optionals withAsahiOverlay [
+                apple-silicon-support.overlays.default
+              ];
               nix.registry.nixpkgs.flake = nixpkgs;
             }
           ];
         };
     in
     {
+      nixosModules = {
+        omarchnix = import ./modules/omarchnix.nix;
+        default = self.nixosModules.omarchnix;
+      };
+
+      homeManagerModules = {
+        omarchnix = import ./home;
+        default = self.homeManagerModules.omarchnix;
+      };
+
       nixosConfigurations = {
         # Target machine: MacBook Air M2 (daily driver after cutover).
         m2air = mkNixos {
@@ -67,6 +80,24 @@
             apple-silicon-support.nixosModules.apple-silicon-support
             ./hosts/common.nix
             ./hosts/m2air.nix
+          ];
+        };
+
+        # ARM64 UEFI server/workstation: NVIDIA Grace / DGX Spark.
+        spark = mkNixos {
+          system = "aarch64-linux";
+          withAsahiOverlay = false;
+          modules = [
+            ./hosts/spark.nix
+          ];
+        };
+
+        # Generic x86_64-linux UEFI workstation/VM.
+        workstation = mkNixos {
+          system = "x86_64-linux";
+          withAsahiOverlay = false;
+          modules = [
+            ./hosts/workstation.nix
           ];
         };
 
@@ -176,6 +207,50 @@
             rehearsalConfig = self.nixosConfigurations.rehearsal.config;
             vmConfig = self.nixosConfigurations.vm.config;
           };
+
+          modules-eval =
+            let
+              standaloneNixos = nixpkgs.lib.nixosSystem {
+                inherit system;
+                modules = [
+                  self.nixosModules.omarchnix
+                  inputs.home-manager.nixosModules.home-manager
+                  {
+                    networking.hostName = "standalone-consumer";
+                    omarchnix = {
+                      enable = true;
+                      profile = if system == "aarch64-linux" then "spark" else "workstation";
+                      desktop = {
+                        enable = true;
+                        user = "alice";
+                      };
+                    };
+                    fileSystems."/" = {
+                      device = "/dev/vda1";
+                      fsType = "ext4";
+                    };
+                    fileSystems."/boot" = {
+                      device = "/dev/vda2";
+                      fsType = "vfat";
+                    };
+                    users.users.alice = {
+                      isNormalUser = true;
+                      uid = 1000;
+                      extraGroups = [ "wheel" ];
+                    };
+                  }
+                ];
+              };
+            in
+            assert standaloneNixos.config.programs.hyprland.enable == true;
+            assert standaloneNixos.config.boot.loader.systemd-boot.enable == true;
+            assert
+              standaloneNixos.config.home-manager.users.alice.wayland.windowManager.hyprland.enable == true;
+            assert self.nixosConfigurations.spark.pkgs.stdenv.hostPlatform.system == "aarch64-linux";
+            assert self.nixosConfigurations.workstation.pkgs.stdenv.hostPlatform.system == "x86_64-linux";
+            pkgs.runCommand "omarchnix-modules-eval" { } ''
+              echo "${standaloneNixos.config.system.build.toplevel.drvPath}" > "$out"
+            '';
         }
       );
 
