@@ -9,3 +9,5 @@ a new file, never by editing an old one.
 - G3 (VM boots shared config) — qemu invocation + boot log
 - G4/G5 — rehearsal box, per `runbook-scaleway.md`
 - G6 — the Air, per `install-m2air.md`
+- G7 (security VM checks) — CI `checks` + `disko-declare` on `main`, plus test log and secret sweep
+- G8 (Hyprland desktop) — `m2air` `home-manager` evaluation + KVM desktop screenshot artifact on `main`
