@@ -71,6 +71,12 @@ in
 
       monitor = [
         {
+          output = "eDP-1";
+          mode = "2560x1664@60";
+          position = "0x0";
+          scale = "1.6";
+        }
+        {
           output = "";
           mode = "preferred";
           position = "auto";
@@ -100,6 +106,10 @@ in
       ];
 
       config = {
+        xwayland = {
+          force_zero_scaling = true;
+        };
+
         general = {
           gaps_in = theme.ui.gapsIn;
           gaps_out = theme.ui.gapsOut;

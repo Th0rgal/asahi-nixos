@@ -13,10 +13,12 @@ of €0.17/h. Record every session in `docs/logs/g4-g5-<date>.md`.
 
 ## 1. Provision
 
-- [ ] Create Mac mini M2 (M2-M), macOS image, PAR zone
+- [ ] Create Mac mini M2 (`M2-M`), macOS image, PAR zone (`fr-par-1`):
+      via Orb managed compute (`spawn_managed_machine(provider="scaleway", size="M2-M", provisioning_mode="raw", allow_24h_commitment=true)`) or Scaleway console when `fr-par-1` stock is open (note mandatory 24-hour Apple Silicon minimum lease)
 - [ ] Enable remote screen (VNC) — the Asahi installer prompts and the
       first UEFI boot need console access, not just SSH
-- [ ] Note the public IP; SSH to macOS as `root` (Scaleway default)
+- [ ] Encrypt the assigned public IP and VNC credentials into
+      `secrets/rehearsal.yaml` (`sops --config .sops.yaml -e -i secrets/rehearsal.yaml`); SSH to macOS as `root` (Scaleway default)
 
 ## 2. Asahi bootstrap (from macOS, as root)
 
