@@ -3,6 +3,8 @@
   pkgs,
   omarchyShell,
   marketplaceSrc ? null,
+  turboLean ? null,
+  receiptGate ? null,
 }:
 let
   registryPath = if marketplaceSrc != null then "${marketplaceSrc}/registry.json" else "";
@@ -11,6 +13,7 @@ pkgs.writeShellApplication {
   name = "omarchnix";
   runtimeInputs = [
     omarchyShell
+    pkgs.b3sum
     pkgs.bash
     pkgs.coreutils
     pkgs.curl
@@ -20,15 +23,19 @@ pkgs.writeShellApplication {
     pkgs.gnugrep
     pkgs.gnused
     pkgs.jq
+    pkgs.lean4
     pkgs.nix
     pkgs.procps
     pkgs.systemd
     pkgs.wayland-utils
-  ];
+  ]
+  ++ lib.optional (turboLean != null) turboLean
+  ++ lib.optional (receiptGate != null) receiptGate;
   text = ''
     set -euo pipefail
 
     export OMARCHY_PATH="''${OMARCHY_PATH:-${omarchyShell.sharePath}}"
+    export TURBO_LEAN_BIN="''${TURBO_LEAN_BIN:-${pkgs.lean4}/bin/lean}"
     MARKETPLACE_REGISTRY_DEFAULT="${registryPath}"
     MARKETPLACE_REGISTRY_URL="https://raw.githubusercontent.com/omacom/omarchy-plugin-marketplace/main/registry.json"
 
@@ -39,8 +46,10 @@ pkgs.writeShellApplication {
     Agent-first declarative NixOS & Omarchy workstation CLI.
 
     Commands:
-      status [--json]                     Inspect current theme, shell backend, plugins, and agent skills
+      status [--json]                     Inspect current theme, shell backend, plugins, receipts, and agent skills
       check [--flake <dir>] [--json]      Validate flake formatting/eval, plugin manifests, and runtime state
+      audit [--path <dir>] [--pubkey <hex>] [--allow-empty] [--json]
+                                          Offline-verify Schema v2 BLAKE3 + Ed25519 receipts for proof-carrying binaries
       theme list [--json]                 List all available Omarchy themes (bundled + user)
       theme current                       Print the active Omarchy theme
       theme set <name> [--offline]        Live-switch the active Omarchy theme across shell, foot, Hyprland, and agents
@@ -124,6 +133,11 @@ pkgs.writeShellApplication {
         skills_json="$(printf '%s\n' "''${skills_present[@]}" | jq -R . | jq -s .)"
       fi
 
+      local receipt_count=0
+      if [[ -d "/run/current-system/sw/share/omarchnix/receipts" ]]; then
+        receipt_count="$(find -L "/run/current-system/sw/share/omarchnix/receipts" -maxdepth 1 -type f -name '*.receipt.json' 2>/dev/null | wc -l | tr -d ' ')"
+      fi
+
       if (( want_json )); then
         jq -nc \
           --arg theme "$theme_name" \
@@ -131,6 +145,7 @@ pkgs.writeShellApplication {
           --argjson shellRunning "$shell_running" \
           --argjson waybarRunning "$waybar_running" \
           --argjson thirdPartyPlugins "$installed_third_party" \
+          --argjson verifiedReceipts "$receipt_count" \
           --argjson agentSkills "$skills_json" \
           '{
             theme: $theme,
@@ -138,6 +153,7 @@ pkgs.writeShellApplication {
             shellRunning: $shellRunning,
             waybarRunning: $waybarRunning,
             thirdPartyPlugins: $thirdPartyPlugins,
+            verifiedReceipts: $verifiedReceipts,
             agentSkills: $agentSkills
           }'
       else
@@ -146,8 +162,242 @@ pkgs.writeShellApplication {
         echo "omarchy-shell:  $shell_running"
         echo "waybar:         $waybar_running"
         echo "3rd-party:      $(jq -r 'map(.id) | if length == 0 then "none" else join(", ") end' <<<"$installed_third_party")"
+        echo "Proof receipts: $receipt_count"
         echo "Agent skills:   $(jq -r 'length' <<<"$skills_json") installed"
       fi
+    }
+
+    collect_receipts_for_target() {
+      local target="$1"
+      local seen_real=()
+      add_file() {
+        local logical real
+        logical="$(realpath --no-symlinks "$1" 2>/dev/null || printf '%s' "$1")"
+        real="$(readlink -f "$1" 2>/dev/null || printf '%s' "$logical")"
+        [[ -f "$real" ]] || return 0
+        local s
+        for s in "''${seen_real[@]}"; do
+          [[ "$s" == "$real" ]] && return 0
+        done
+        seen_real+=("$real")
+        printf '%s\n' "$logical"
+      }
+
+      if [[ -f "$target" ]]; then
+        add_file "$target"
+        return 0
+      fi
+
+      local d
+      for d in \
+        "$target/share/omarchnix/receipts" \
+        "$target/sw/share/omarchnix/receipts"; do
+        if [[ -d "$d" ]]; then
+          while IFS= read -r rf; do
+            [[ -n "$rf" ]] && add_file "$rf"
+          done < <(find -L "$d" -maxdepth 1 -type f -name '*.receipt.json' 2>/dev/null | sort)
+        fi
+      done
+
+      if command -v nix-store >/dev/null 2>&1; then
+        local closure_paths
+        if closure_paths="$(nix-store -qR "$target" 2>/dev/null)"; then
+          local sp
+          while IFS= read -r sp; do
+            [[ -n "$sp" && -d "$sp/share/omarchnix/receipts" ]] || continue
+            while IFS= read -r rf; do
+              [[ -n "$rf" ]] && add_file "$rf"
+            done < <(find -L "$sp/share/omarchnix/receipts" -maxdepth 1 -type f -name '*.receipt.json' 2>/dev/null | sort)
+          done <<<"$closure_paths"
+        fi
+      fi
+
+      if (( ''${#seen_real[@]} == 0 )) && [[ -d "$target" ]]; then
+        while IFS= read -r rf; do
+          [[ -n "$rf" ]] && add_file "$rf"
+        done < <(find -L "$target" -maxdepth 4 -type f -name '*.receipt.json' 2>/dev/null | sort)
+      fi
+    }
+
+    cmd_audit() {
+      local target="/run/current-system"
+      local verify_pubkey=""
+      local allow_empty=0
+      local want_json=0
+      while (( $# > 0 )); do
+        case "$1" in
+          --path)
+            target="''${2:-}"
+            shift 2
+            ;;
+          --pubkey | --verify-pubkey)
+            verify_pubkey="''${2:-}"
+            shift 2
+            ;;
+          --allow-empty)
+            allow_empty=1
+            shift
+            ;;
+          --json)
+            want_json=1
+            shift
+            ;;
+          *)
+            if [[ "$1" != -* && "$target" == "/run/current-system" ]]; then
+              target="$1"
+              shift
+            else
+              echo "omarchnix audit: unknown option: $1" >&2
+              exit 1
+            fi
+            ;;
+        esac
+      done
+
+      if ! command -v turbo-lean >/dev/null 2>&1 || ! command -v omarchnix-receipt-gate >/dev/null 2>&1; then
+        echo "omarchnix audit: turbo-lean and omarchnix-receipt-gate are required in PATH" >&2
+        exit 1
+      fi
+
+      if [[ ! -e "$target" ]]; then
+        if (( want_json )); then
+          jq -nc --arg target "$target" '{ok: false, target: $target, error: "target_not_found", verified_count: 0, receipts: []}'
+        else
+          echo "omarchnix audit: target '$target' does not exist" >&2
+        fi
+        exit 1
+      fi
+
+      local tmp_state
+      tmp_state="$(mktemp -d)"
+      trap 'rm -rf "$tmp_state"' RETURN
+
+      local receipt_files=()
+      while IFS= read -r rf; do
+        [[ -n "$rf" ]] && receipt_files+=("$rf")
+      done < <(collect_receipts_for_target "$target")
+
+      if (( ''${#receipt_files[@]} == 0 )); then
+        local empty_ok="false"
+        if (( allow_empty )); then
+          empty_ok="true"
+        fi
+        if (( want_json )); then
+          jq -nc --argjson ok "$empty_ok" --arg target "$target" '{ok: $ok, target: $target, verified_count: 0, receipts: []}'
+        else
+          echo "omarchnix audit: 0 receipts found under $target (ok=$empty_ok)"
+        fi
+        [[ "$empty_ok" == "true" ]]
+        return
+      fi
+
+      local all_ok=true
+      local results=()
+      local rf
+      for rf in "''${receipt_files[@]}"; do
+        local pkg_name bin_path recorded_pubkey effective_pubkey actual_blake3
+        pkg_name="$(jq -r '.omarchnix_package // ""' "$rf" 2>/dev/null || true)"
+        bin_path="$(jq -r '.binary_path // ""' "$rf" 2>/dev/null || true)"
+        recorded_pubkey="$(jq -r '.ed25519_pubkey // ""' "$rf" 2>/dev/null || true)"
+        effective_pubkey="$recorded_pubkey"
+        if [[ -n "$verify_pubkey" ]]; then
+          effective_pubkey="$verify_pubkey"
+        fi
+
+        actual_blake3="missing"
+        local rel_bin
+        rel_bin="$(dirname "$(dirname "$(dirname "$(dirname "$rf")")")")/bin/$pkg_name"
+        if [[ -n "$pkg_name" && -f "$rel_bin" ]]; then
+          bin_path="$rel_bin"
+          actual_blake3="$(b3sum --no-names "$bin_path" 2>/dev/null || printf 'error')"
+        elif [[ "$rf" == /nix/store/* && -n "$bin_path" && -f "$bin_path" ]]; then
+          actual_blake3="$(b3sum --no-names "$bin_path" 2>/dev/null || printf 'error')"
+        fi
+
+        local tl_args=(
+          --json
+          verify-receipt
+          --no-daemon
+          --no-telemetry
+          --cache-dir "$tmp_state/cache"
+          --receipt "$rf"
+          --require-signature
+        )
+        if [[ -n "$effective_pubkey" ]]; then
+          tl_args+=(--verify-pubkey "$effective_pubkey")
+        fi
+
+        local crypto_ok="0"
+        local tl_out="{}"
+        if tl_out="$(TURBO_LEAN_STATE_DIR="$tmp_state/state" turbo-lean "''${tl_args[@]}" 2>/dev/null)"; then
+          if jq -e '.status == "receipt_verified" and .schema_version == 2 and .signature_verified == true and .forbidden_constructs_found == 0' <<<"$tl_out" >/dev/null 2>&1 \
+            && jq -e --arg binKey "BuildArtifacts/BinaryBlake3_''${actual_blake3}.lean" '.per_file_interfaces | has($binKey)' "$rf" >/dev/null 2>&1; then
+            crypto_ok="1"
+          fi
+        fi
+
+        local gate_out="{}"
+        local gate_ok=false
+        if gate_out="$(omarchnix-receipt-gate check-receipt \
+          --receipt "$rf" \
+          --actual-binary-blake3 "$actual_blake3" \
+          --crypto-sig-ok "$crypto_ok" \
+          --json 2>/dev/null)"; then
+          if jq -e '.admitted == true' <<<"$gate_out" >/dev/null 2>&1; then
+            gate_ok=true
+          fi
+        fi
+
+        if [[ "$gate_ok" != "true" ]]; then
+          all_ok=false
+        fi
+
+        local entry_json
+        entry_json="$(jq -nc \
+          --arg package "$pkg_name" \
+          --arg receipt "$rf" \
+          --arg binary "$bin_path" \
+          --arg actualBlake3 "$actual_blake3" \
+          --arg pubkey "$effective_pubkey" \
+          --argjson ok "$gate_ok" \
+          --argjson gate "$(if [[ -n "$gate_out" ]] && jq -e . <<<"$gate_out" >/dev/null 2>&1; then printf '%s' "$gate_out"; else printf '{}'; fi)" \
+          '{
+            package: $package,
+            ok: $ok,
+            receipt: $receipt,
+            binary_path: $binary,
+            actual_binary_blake3: $actualBlake3,
+            signer_pubkey: $pubkey,
+            gate: $gate
+          }')"
+        results+=("$entry_json")
+      done
+
+      local results_json
+      results_json="$(printf '%s\n' "''${results[@]}" | jq -s .)"
+      local verified_count
+      verified_count="$(jq '[.[] | select(.ok == true)] | length' <<<"$results_json")"
+
+      if (( want_json )); then
+        jq -nc \
+          --argjson ok "$all_ok" \
+          --arg target "$target" \
+          --argjson verifiedCount "$verified_count" \
+          --argjson totalCount "''${#receipt_files[@]}" \
+          --argjson receipts "$results_json" \
+          '{
+            ok: $ok,
+            target: $target,
+            verified_count: $verifiedCount,
+            total_count: $totalCount,
+            receipts: $receipts
+          }'
+      else
+        jq -r '.[] | "[\(if .ok then "VERIFIED" else "FAILED" end)] \(.package) (\(.binary_path)) blake3=\(.actual_binary_blake3[0:16])..."' <<<"$results_json"
+        echo "Summary: $verified_count/''${#receipt_files[@]} proof-carrying binary receipt(s) verified (ok=$all_ok)"
+      fi
+
+      [[ "$all_ok" == "true" ]]
     }
 
     cmd_check() {
@@ -452,6 +702,9 @@ pkgs.writeShellApplication {
         ;;
       check)
         cmd_check "$@"
+        ;;
+      audit)
+        cmd_audit "$@"
         ;;
       theme)
         cmd_theme "$@"

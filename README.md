@@ -2,7 +2,7 @@
 
 Proof-carrying, declarative Omarchy-compatible NixOS & Home Manager workstation stack across **`aarch64-linux`** (Apple Silicon M-series via Asahi Linux, NVIDIA Grace / DGX Spark) and **`x86_64-linux`** workstations and VMs.
 
-See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/decisions.md`](docs/decisions.md) (`DR-1`..`DR-9`) for recorded design decisions.
+See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/decisions.md`](docs/decisions.md) (`DR-1`..`DR-11`) for recorded design decisions.
 
 ---
 
@@ -45,7 +45,8 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
 
 - **23+ Themes & Live Switching:** `omarchnix.lib.omarchy.importTheme` imports all bundled Omarchy `colors.toml` palettes (or custom directories) at Nix evaluation time; `omarchnix theme set <name>` switches themes live across `omarchy-shell`, `foot`, Hyprland, `opencode`, `claude`, and `hermes`.
 - **Quickshell QML Runtime & Plugins:** `pkgs.omarchnix.omarchy-shell` runs upstream `omarchy-shell` (`Qt 6.12` / `quickshell`) with NixOS FHS shims, while `programs.omarchnix.plugins.locked` + `omarchnix plugin install <id>` load validated `plugins.omarchy.org` plugins without symlinks.
-- **Agent-First Ergonomics:** Automatically provisions the governed `omarchnix` system skill and live theme hooks for `opencode`, `claude`, `codex`, and `hermes`, backed by `omarchnix status` and `omarchnix check`.
+- **Agent-First Ergonomics:** Automatically provisions the governed `omarchnix` system skill and live theme hooks for `opencode`, `claude`, `codex`, and `hermes`, backed by `omarchnix status`, `omarchnix check`, and `omarchnix audit`.
+- **Proof-Carrying Lean 4 Userspace (`buildVerifiedLeanSys` + `omarchnix audit`):** Builds `omarchnix-receipt-gate` from pinned `lean-sys` + `turbo-lean` + `LeanNative` with `0 sorryAx` (`TurboLean.Inspector`), `turbo-lean audit-spec` tightness verification, verified ARMv8.2+ NEON `pmull` / x86_64 ELF64 codegen, and signed Schema v2 BLAKE3 + Ed25519 store receipts verified offline via `omarchnix audit`.
 
 ### Reference `nixosConfigurations`
 

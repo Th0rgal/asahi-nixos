@@ -8,6 +8,47 @@
 }:
 let
   cfg = config.omarchnix;
+  omarchnixReceiptGatePkg =
+    if (pkgs ? omarchnix) && (pkgs.omarchnix ? receipt-gate) then
+      pkgs.omarchnix.receipt-gate
+    else if (inputs ? lean-sys) && (inputs ? turbo-lean) then
+      let
+        leanSys = import ../pkgs/lean-sys.nix {
+          inherit pkgs;
+          leanSysSrc = inputs.lean-sys;
+        };
+        turboLean = import ../pkgs/turbo-lean.nix {
+          inherit lib pkgs leanSys;
+          turboLeanSrc = inputs.turbo-lean;
+        };
+        buildVerifiedLeanSys = import ../pkgs/build-verified-lean-sys.nix {
+          inherit
+            lib
+            pkgs
+            leanSys
+            turboLean
+            ;
+        };
+      in
+      import ../pkgs/omarchnix-receipt-gate { inherit buildVerifiedLeanSys; }
+    else
+      null;
+  omarchnixTurboLeanPkg =
+    if (pkgs ? omarchnix) && (pkgs.omarchnix ? turbo-lean) then
+      pkgs.omarchnix.turbo-lean
+    else if (inputs ? lean-sys) && (inputs ? turbo-lean) then
+      let
+        leanSys = import ../pkgs/lean-sys.nix {
+          inherit pkgs;
+          leanSysSrc = inputs.lean-sys;
+        };
+      in
+      import ../pkgs/turbo-lean.nix {
+        inherit lib pkgs leanSys;
+        turboLeanSrc = inputs.turbo-lean;
+      }
+    else
+      null;
   omarchnixCliPkg =
     if (pkgs ? omarchnix) && (pkgs.omarchnix ? cli) then
       pkgs.omarchnix.cli
@@ -26,6 +67,8 @@ let
           omarchyShell
           marketplaceSrc
           ;
+        turboLean = omarchnixTurboLeanPkg;
+        receiptGate = omarchnixReceiptGatePkg;
       }
     else
       null;
@@ -74,6 +117,12 @@ in
       type = lib.types.bool;
       default = false;
       description = "Enable sops-nix age secret decryption wiring.";
+    };
+
+    verifiedUserspace.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Install proof-carrying Lean 4 + lean-sys + LeanNative userspace utilities (`omarchnix-receipt-gate`) and link signed Schema v2 receipts under `/run/current-system/sw/share/omarchnix/receipts`.";
     };
 
     desktop = {
@@ -140,13 +189,20 @@ in
       environment.variables.EDITOR = "hx";
       programs.zsh.enable = lib.mkDefault true;
 
+      environment.pathsToLink = [
+        "/share/omarchnix"
+      ];
+
       environment.systemPackages = [
         pkgs.git
         pkgs.helix
         pkgs.jq
         pkgs.ripgrep
       ]
-      ++ lib.optional (omarchnixCliPkg != null) omarchnixCliPkg;
+      ++ lib.optional (omarchnixCliPkg != null) omarchnixCliPkg
+      ++ lib.optional (
+        cfg.verifiedUserspace.enable && omarchnixReceiptGatePkg != null
+      ) omarchnixReceiptGatePkg;
 
       nix.settings = {
         experimental-features = [

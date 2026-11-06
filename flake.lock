@@ -76,6 +76,23 @@
         "type": "github"
       }
     },
+    "lean-sys": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793934008,
+        "narHash": "sha256-TKE6Zhx4mWHFkJJbZEOQLwPQomAAYU5L3fYAiDMGwi8=",
+        "owner": "Th0rgal",
+        "repo": "lean-sys",
+        "rev": "bbe3183d3fd57ee662405f0c63fde890fb878324",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Th0rgal",
+        "repo": "lean-sys",
+        "rev": "bbe3183d3fd57ee662405f0c63fde890fb878324",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1793726008,
@@ -164,12 +181,14 @@
         "apple-silicon-support": "apple-silicon-support",
         "disko": "disko",
         "home-manager": "home-manager",
+        "lean-sys": "lean-sys",
         "nixpkgs": "nixpkgs",
         "nixpkgs-toolchains": "nixpkgs-toolchains",
         "omarchy": "omarchy",
         "omarchy-plugin-marketplace": "omarchy-plugin-marketplace",
         "omarchy-plugin-opencode-usage": "omarchy-plugin-opencode-usage",
-        "sops-nix": "sops-nix"
+        "sops-nix": "sops-nix",
+        "turbo-lean": "turbo-lean"
       }
     },
     "sops-nix": {
@@ -189,6 +208,23 @@
       "original": {
         "owner": "Mic92",
         "repo": "sops-nix",
+        "type": "github"
+      }
+    },
+    "turbo-lean": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793936773,
+        "narHash": "sha256-Ag6lONVX9Y0B0CVD/zEREM2Xp6H++Kt7jBw/V3AOEsk=",
+        "owner": "Th0rgal",
+        "repo": "turbo-lean",
+        "rev": "7a8cb0c56865532397cc796327c7fa5e256f8f8e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Th0rgal",
+        "repo": "turbo-lean",
+        "rev": "7a8cb0c56865532397cc796327c7fa5e256f8f8e",
         "type": "github"
       }
     }
