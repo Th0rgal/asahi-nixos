@@ -25,12 +25,12 @@ Every cell is backed by a recorded gate (CI run or runbook log in
 | --- | --- | --- |
 | G1 — flake evaluates | `nix eval` on all three hosts, in CI | passed ([`g1-2026-11-06.md`](docs/logs/g1-2026-11-06.md)) |
 | G2 — installer ISO builds | `nix build .#installer-bootstrap` in CI, artifact attached | passed ([`g2-2026-11-06.md`](docs/logs/g2-2026-11-06.md)) |
-| G3 — VM boots shared config | qemu boot log in `docs/logs/` | blocked on Phase 0 `boat.dev` VM ([`phase0-blocks-2026-11-06.md`](docs/logs/phase0-blocks-2026-11-06.md)) |
-| G4 — Asahi bootstrap on real BootROM | runbook log from the rehearsal box | blocked on Phase 0 Scaleway M2 + GO ([`phase0-blocks-2026-11-06.md`](docs/logs/phase0-blocks-2026-11-06.md)) |
-| G5 — NixOS install + rebuild on rehearsal | `nixos-rebuild switch` log on the mini | blocked on Phase 0 Scaleway M2 + GO ([`phase0-blocks-2026-11-06.md`](docs/logs/phase0-blocks-2026-11-06.md)) |
-| G6 — Air install, dual-boot macOS kept | runbook log from the Air | blocked on G4/G5 + owner execution ([`phase0-blocks-2026-11-06.md`](docs/logs/phase0-blocks-2026-11-06.md)) |
+| G3 — VM boots shared config | qemu boot log in `docs/logs/` | passed ([`g3-2026-11-06.md`](docs/logs/g3-2026-11-06.md)) |
+| G4 — Asahi bootstrap on real BootROM | runbook log from the rehearsal box | blocked on Phase 0 Scaleway M2 + GO ([`phase0-blocks-g4-g6-2026-11-06.md`](docs/logs/phase0-blocks-g4-g6-2026-11-06.md)) |
+| G5 — NixOS install + rebuild on rehearsal | `nixos-rebuild switch` log on the mini | blocked on Phase 0 Scaleway M2 + GO ([`phase0-blocks-g4-g6-2026-11-06.md`](docs/logs/phase0-blocks-g4-g6-2026-11-06.md)) |
+| G6 — Air install, dual-boot macOS kept | runbook log from the Air | blocked on G4/G5 + owner execution ([`phase0-blocks-g4-g6-2026-11-06.md`](docs/logs/phase0-blocks-g4-g6-2026-11-06.md)) |
 | G7 — security & container invariants | `checks.x86_64-linux.{disko-declare,security}` in CI + secret sweep | passed ([`g7-2026-11-06.md`](docs/logs/g7-2026-11-06.md)) |
-| G8 — Hyprland desktop via home-manager | `m2air` eval + `checks.x86_64-linux.desktop` screenshot in CI | passed ([`g8-2026-11-06.md`](docs/logs/g8-2026-11-06.md)) |
+| G8 — Hyprland desktop via home-manager | `m2air` eval + `checks.x86_64-linux.desktop` screenshot in CI + `boat.dev` toplevel build | passed ([`g8-2026-11-06.md`](docs/logs/g8-2026-11-06.md), [`g3-2026-11-06.md`](docs/logs/g3-2026-11-06.md)) |
 
 ## Method
 
