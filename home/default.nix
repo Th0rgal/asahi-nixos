@@ -2,26 +2,104 @@
   config,
   lib,
   pkgs,
+  inputs ? { },
   ...
 }:
 let
   cfg = config.programs.omarchnix;
+  omarchySrc =
+    if cfg.omarchySrc != null then
+      cfg.omarchySrc
+    else if inputs ? omarchy then
+      inputs.omarchy
+    else if (pkgs ? omarchnix) && (pkgs.omarchnix ? omarchySrc) then
+      pkgs.omarchnix.omarchySrc
+    else
+      null;
+
+  marketplaceSrc =
+    if cfg.marketplaceSrc != null then
+      cfg.marketplaceSrc
+    else if inputs ? omarchy-plugin-marketplace then
+      inputs.omarchy-plugin-marketplace
+    else if (pkgs ? omarchnix) && (pkgs.omarchnix ? marketplaceSrc) then
+      pkgs.omarchnix.marketplaceSrc
+    else
+      null;
+
+  omarchyLib = import ../lib/omarchy.nix {
+    inherit lib omarchySrc;
+  };
+
+  defaultOmarchyShell =
+    if (pkgs ? omarchnix) && (pkgs.omarchnix ? omarchy-shell) then
+      pkgs.omarchnix.omarchy-shell
+    else if omarchySrc != null then
+      import ../pkgs/omarchy-shell.nix {
+        inherit
+          lib
+          pkgs
+          omarchySrc
+          marketplaceSrc
+          ;
+      }
+    else
+      null;
+
+  defaultCli =
+    if (pkgs ? omarchnix) && (pkgs.omarchnix ? cli) then
+      pkgs.omarchnix.cli
+    else if defaultOmarchyShell != null then
+      import ../pkgs/omarchnix-cli.nix {
+        inherit lib pkgs marketplaceSrc;
+        omarchyShell = defaultOmarchyShell;
+      }
+    else
+      null;
+
   theme =
-    if cfg.theme.attrset != null then cfg.theme.attrset else import ./theme.nix { inherit pkgs; };
+    if cfg.theme.attrset != null then
+      cfg.theme.attrset
+    else if omarchySrc != null then
+      omarchyLib.importTheme {
+        theme = cfg.theme.name;
+        inherit pkgs;
+      }
+    else
+      (import ./theme.nix { inherit pkgs; }) // { name = cfg.theme.name; };
 in
 {
   options.programs.omarchnix = {
     enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Enable the omarchnix Home Manager desktop & theme environment.";
+      description = "Enable the omarchnix Home Manager desktop, theme, shell, plugin, and agent environment.";
+    };
+
+    omarchySrc = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Optional explicit upstream omacom/omarchy source path override.";
+    };
+
+    marketplaceSrc = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Optional explicit omacom/omarchy-plugin-marketplace source path override.";
+    };
+
+    cliPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = defaultCli;
+      defaultText = lib.literalExpression "pkgs.omarchnix.cli";
+      description = "Package providing the `omarchnix` CLI.";
     };
 
     theme = {
       name = lib.mkOption {
         type = lib.types.str;
         default = "tokyo-night";
-        description = "Active Omarchy theme name.";
+        description = "Active Omarchy theme name (all 23+ upstream palettes supported).";
       };
 
       attrset = lib.mkOption {
@@ -30,11 +108,103 @@ in
         description = "Optional custom theme attrset override (e.g. from lib.omarchy.importTheme).";
       };
     };
+
+    shell = {
+      backend = lib.mkOption {
+        type = lib.types.enum [
+          "waybar"
+          "omarchy-shell"
+        ];
+        default = "waybar";
+        description = ''
+          Active bar/panel runtime:
+          - `omarchy-shell`: Upstream Quickshell (`Qt 6.12`) QML bar, notifications, menus, lock/polkit surfaces, and `plugins.omarchy.org` host.
+          - `waybar`: Lightweight Waybar status bar.
+        '';
+      };
+
+      package = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = defaultOmarchyShell;
+        defaultText = lib.literalExpression "pkgs.omarchnix.omarchy-shell";
+        description = "Packaged Omarchy Quickshell runtime and theme/plugin scripts.";
+      };
+
+      extraSettings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        default = { };
+        description = "Additional top-level fields merged into the initial `~/.config/omarchy/shell.json`.";
+      };
+    };
+
+    plugins = {
+      locked = lib.mkOption {
+        default = { };
+        description = "Declarative Nix-locked `plugins.omarchy.org` / Omarchy shell plugins validated at build time and materialized symlink-free into `~/.config/omarchy/plugins/<id>`.";
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              package = lib.mkOption {
+                type = lib.types.package;
+                description = "Validated plugin derivation built with `lib.omarchy.buildPlugin`.";
+              };
+              enable = lib.mkOption {
+                type = lib.types.bool;
+                default = true;
+                description = "Enable the plugin in `~/.config/omarchy/shell.json`.";
+              };
+              section = lib.mkOption {
+                type = lib.types.nullOr (
+                  lib.types.enum [
+                    "left"
+                    "centerBegin"
+                    "center"
+                    "centerEnd"
+                    "tray"
+                    "right"
+                  ]
+                );
+                default = null;
+                description = "Optional bar section override for `bar-widget` plugins.";
+              };
+            };
+          }
+        );
+      };
+    };
+
+    agents = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Provision the governed `omarchnix` system skill and agent ergonomics configs.";
+      };
+
+      targets = lib.mkOption {
+        type = lib.types.listOf (
+          lib.types.enum [
+            "opencode"
+            "claude"
+            "codex"
+            "hermes"
+          ]
+        );
+        default = [
+          "opencode"
+          "claude"
+          "codex"
+          "hermes"
+        ];
+        description = "Coding agents for which `omarchnix` provisions skills and live theme hooks.";
+      };
+    };
   };
 
   imports = [
     ./hyprland.nix
     ./waybar.nix
+    ./omarchy-shell.nix
+    ./agents.nix
     ./foot.nix
     ./fuzzel.nix
     ./hyprlock.nix

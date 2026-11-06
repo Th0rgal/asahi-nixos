@@ -1,11 +1,18 @@
-{ pkgs, theme, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  theme,
+  ...
+}:
 let
+  cfg = config.programs.omarchnix;
   wpctl = "${pkgs.wireplumber}/bin/wpctl";
 in
 {
   programs.waybar = {
-    enable = true;
-    systemd.enable = true;
+    enable = lib.mkDefault (cfg.shell.backend == "waybar");
+    systemd.enable = lib.mkDefault (cfg.shell.backend == "waybar");
 
     settings = {
       mainBar = {

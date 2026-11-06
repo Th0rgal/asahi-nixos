@@ -32,6 +32,8 @@ jobs:
           nix eval .#nixosConfigurations.vm.config.system.build.toplevel.drvPath --raw
           nix eval .#checks.x86_64-linux.modules-eval.drvPath --raw
           nix eval .#checks.aarch64-linux.modules-eval.drvPath --raw
+          nix eval .#checks.x86_64-linux.omarchy-compat.drvPath --raw
+          nix eval .#checks.aarch64-linux.omarchy-compat.drvPath --raw
 
   format:
     runs-on: ubuntu-latest
@@ -60,6 +62,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Reclaim runner disk space for NixOS VM checks
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost
+          df -h /
       - name: Enable KVM access
         run: |
           if [ -e /dev/kvm ]; then
@@ -69,11 +80,14 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            auto-optimise-store = true
             system-features = kvm nixos-test benchmark big-parallel
-      - name: Run NixOS VM checks
+      - name: Run NixOS checks
         run: |
+          nix build .#checks.x86_64-linux.modules-eval -L
           nix build .#checks.x86_64-linux.security -L
           nix build .#checks.x86_64-linux.desktop -L --out-link desktop-check
+          nix build .#checks.x86_64-linux.omarchy-compat -L
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-screenshot

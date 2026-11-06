@@ -20,6 +20,7 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
     nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux"; # or "aarch64-linux"
       modules = [
+        { nixpkgs.overlays = [ omarchnix.overlays.default ]; }
         omarchnix.nixosModules.omarchnix
         home-manager.nixosModules.home-manager
         {
@@ -29,6 +30,8 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
             desktop = {
               enable = true;
               user = "thomas";
+              theme = "tokyo-night"; # any of the 23+ Omarchy themes
+              shellBackend = "omarchy-shell"; # "omarchy-shell" (Quickshell QML) or "waybar"
             };
           };
         }
@@ -37,6 +40,12 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
   };
 }
 ```
+
+### Omarchy Ecosystem Compatibility (`lib.omarchy`, `omarchy-shell`, `plugins.omarchy.org`)
+
+- **23+ Themes & Live Switching:** `omarchnix.lib.omarchy.importTheme` imports all bundled Omarchy `colors.toml` palettes (or custom directories) at Nix evaluation time; `omarchnix theme set <name>` switches themes live across `omarchy-shell`, `foot`, Hyprland, `opencode`, `claude`, and `hermes`.
+- **Quickshell QML Runtime & Plugins:** `pkgs.omarchnix.omarchy-shell` runs upstream `omarchy-shell` (`Qt 6.12` / `quickshell`) with NixOS FHS shims, while `programs.omarchnix.plugins.locked` + `omarchnix plugin install <id>` load validated `plugins.omarchy.org` plugins without symlinks.
+- **Agent-First Ergonomics:** Automatically provisions the governed `omarchnix` system skill and live theme hooks for `opencode`, `claude`, `codex`, and `hermes`, backed by `omarchnix status` and `omarchnix check`.
 
 ### Reference `nixosConfigurations`
 

@@ -108,6 +108,57 @@
         "type": "github"
       }
     },
+    "omarchy": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793854933,
+        "narHash": "sha256-6GIMRXFOa0YAyZRO71oOtTY4mRWAvK/oRBtfM4llfBo=",
+        "owner": "omacom",
+        "repo": "omarchy",
+        "rev": "6194f4606c585da8b839b87df9120b7d796afedf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "omacom",
+        "repo": "omarchy",
+        "rev": "6194f4606c585da8b839b87df9120b7d796afedf",
+        "type": "github"
+      }
+    },
+    "omarchy-plugin-marketplace": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793929948,
+        "narHash": "sha256-3oDxGmNVz/3g99ojf7hjMs6wvzkykWRQ+xKvQD4vLMM=",
+        "owner": "omacom",
+        "repo": "omarchy-plugin-marketplace",
+        "rev": "d2a854554c778b06911f6c878d9ea0d4522c4a14",
+        "type": "github"
+      },
+      "original": {
+        "owner": "omacom",
+        "repo": "omarchy-plugin-marketplace",
+        "rev": "d2a854554c778b06911f6c878d9ea0d4522c4a14",
+        "type": "github"
+      }
+    },
+    "omarchy-plugin-opencode-usage": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786899516,
+        "narHash": "sha256-pVrtfcRj/kn9LOYp+pR7Mh3CzOQtA6Eq8SLtBbttiLA=",
+        "owner": "JJDizz1L",
+        "repo": "dizziee.opencode-model-usage",
+        "rev": "95a0f856d704e12915888dca7ec093e5df3009d9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "JJDizz1L",
+        "repo": "dizziee.opencode-model-usage",
+        "rev": "95a0f856d704e12915888dca7ec093e5df3009d9",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "apple-silicon-support": "apple-silicon-support",
@@ -115,6 +166,9 @@
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "nixpkgs-toolchains": "nixpkgs-toolchains",
+        "omarchy": "omarchy",
+        "omarchy-plugin-marketplace": "omarchy-plugin-marketplace",
+        "omarchy-plugin-opencode-usage": "omarchy-plugin-opencode-usage",
         "sops-nix": "sops-nix"
       }
     },
