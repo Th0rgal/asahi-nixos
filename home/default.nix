@@ -51,7 +51,7 @@ let
       pkgs.omarchnix.cli
     else if defaultOmarchyShell != null then
       import ../pkgs/omarchnix-cli.nix {
-        inherit lib pkgs marketplaceSrc;
+        inherit pkgs marketplaceSrc;
         omarchyShell = defaultOmarchyShell;
       }
     else

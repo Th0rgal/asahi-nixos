@@ -1,5 +1,5 @@
 {
-  description = "omarchnix — Proof-carrying, declarative Omarchy-compatible NixOS & Home Manager workstation stack for Apple Silicon (Asahi), DGX Spark (aarch64-linux), and x86_64-linux";
+  description = "omarchnix — Declarative Omarchy-compatible NixOS & Home Manager workstation stack for Apple Silicon (Asahi), DGX Spark (aarch64-linux), and x86_64-linux";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -39,16 +39,6 @@
       url = "github:JJDizz1L/dizziee.opencode-model-usage/95a0f856d704e12915888dca7ec093e5df3009d9";
       flake = false;
     };
-
-    lean-sys = {
-      url = "github:Th0rgal/lean-sys/bbe3183d3fd57ee662405f0c63fde890fb878324";
-      flake = false;
-    };
-
-    turbo-lean = {
-      url = "github:Th0rgal/turbo-lean/7a8cb0c56865532397cc796327c7fa5e256f8f8e";
-      flake = false;
-    };
   };
 
   outputs =
@@ -79,42 +69,16 @@
             omarchySrc = inputs.omarchy;
             marketplaceSrc = inputs.omarchy-plugin-marketplace;
           };
-          leanSys = import ./pkgs/lean-sys.nix {
-            pkgs = final;
-            leanSysSrc = inputs.lean-sys;
-          };
-          turboLean = import ./pkgs/turbo-lean.nix {
-            inherit (final) lib;
-            pkgs = final;
-            turboLeanSrc = inputs.turbo-lean;
-            inherit leanSys;
-          };
-          buildVerifiedLeanSys = import ./pkgs/build-verified-lean-sys.nix {
-            inherit (final) lib;
-            pkgs = final;
-            inherit leanSys turboLean;
-          };
-          receiptGate = import ./pkgs/omarchnix-receipt-gate {
-            inherit buildVerifiedLeanSys;
-          };
           cli = import ./pkgs/omarchnix-cli.nix {
-            inherit (final) lib;
             pkgs = final;
-            inherit omarchyShell turboLean receiptGate;
+            inherit omarchyShell;
             marketplaceSrc = inputs.omarchy-plugin-marketplace;
           };
         in
         {
           omarchnix = {
-            inherit
-              cli
-              buildVerifiedLeanSys
-              ;
+            inherit cli;
             omarchy-shell = omarchyShell;
-            lean-sys = leanSys;
-            turbo-lean = turboLean;
-            receipt-gate = receiptGate;
-            omarchnix-receipt-gate = receiptGate;
             omarchySrc = inputs.omarchy;
             marketplaceSrc = inputs.omarchy-plugin-marketplace;
             importTheme =
@@ -270,9 +234,6 @@
             };
           omarchy-shell = pkgs.omarchnix.omarchy-shell;
           omarchnix = pkgs.omarchnix.cli;
-          lean-sys = pkgs.omarchnix.lean-sys;
-          turbo-lean = pkgs.omarchnix.turbo-lean;
-          omarchnix-receipt-gate = pkgs.omarchnix.receipt-gate;
           plugin-opencode-model-usage = pkgs.omarchnix.buildPlugin {
             src = inputs.omarchy-plugin-opencode-usage;
           };
@@ -333,16 +294,6 @@
             self = self;
           };
 
-          verified-lean = import ./tests/verified-lean.nix {
-            inherit pkgs inputs self;
-            inherit (nixpkgs) lib;
-          };
-
-          receipt-trust = import ./tests/receipt-trust.nix {
-            inherit pkgs inputs self;
-            inherit (nixpkgs) lib;
-          };
-
           modules-eval =
             let
               standaloneNixos = nixpkgs.lib.nixosSystem {
@@ -396,8 +347,6 @@
               standaloneNixos.config.home-manager.users.alice.wayland.windowManager.hyprland.enable == true;
             assert standaloneNixos.config.home-manager.users.alice.programs.waybar.enable == false;
             assert standaloneNixos.config.home-manager.users.alice.systemd.user.services ? omarchy-shell;
-            assert standaloneNixos.config.omarchnix.verifiedUserspace.enable == true;
-            assert builtins.elem "/share/omarchnix" standaloneNixos.config.environment.pathsToLink;
             assert self.nixosConfigurations.spark.pkgs.stdenv.hostPlatform.system == "aarch64-linux";
             assert self.nixosConfigurations.workstation.pkgs.stdenv.hostPlatform.system == "x86_64-linux";
             pkgs.runCommand "omarchnix-modules-eval" { } ''

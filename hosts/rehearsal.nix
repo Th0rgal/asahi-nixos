@@ -17,7 +17,6 @@
     containers.enable = false;
     secrets.enable = false;
     desktop.enable = false;
-    verifiedUserspace.enable = true;
   };
 
   hardware.asahi = {

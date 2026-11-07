@@ -1,8 +1,8 @@
 # `omarchnix`
 
-Proof-carrying, declarative Omarchy-compatible NixOS & Home Manager workstation stack across **`aarch64-linux`** (Apple Silicon M-series via Asahi Linux, NVIDIA Grace / DGX Spark) and **`x86_64-linux`** workstations and VMs.
+Declarative Omarchy-compatible NixOS & Home Manager workstation stack across **`aarch64-linux`** (Apple Silicon M-series via Asahi Linux, NVIDIA Grace / DGX Spark) and **`x86_64-linux`** workstations and VMs.
 
-See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/decisions.md`](docs/decisions.md) (`DR-1`..`DR-13`) for recorded design decisions.
+See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/decisions.md`](docs/decisions.md) (`DR-1`..`DR-14`) for recorded design decisions.
 
 ---
 
@@ -45,8 +45,7 @@ See [`docs/VISION.md`](docs/VISION.md) for the full architecture and [`docs/deci
 
 - **23+ Themes & Live Switching:** `omarchnix.lib.omarchy.importTheme` imports all bundled Omarchy `colors.toml` palettes (or custom directories) at Nix evaluation time; `omarchnix theme set <name>` switches themes live across `omarchy-shell`, `foot`, Hyprland, `opencode`, `claude`, and `hermes`.
 - **Quickshell QML Runtime & Plugins:** `pkgs.omarchnix.omarchy-shell` runs upstream `omarchy-shell` (`Qt 6.12` / `quickshell`) with NixOS FHS shims, while `programs.omarchnix.plugins.locked` + `omarchnix plugin install <id>` load validated `plugins.omarchy.org` plugins without symlinks.
-- **Agent-First Ergonomics:** Automatically provisions the governed `omarchnix` system skill and live theme hooks for `opencode`, `claude`, `codex`, and `hermes`, backed by `omarchnix status`, `omarchnix check`, and `omarchnix audit`.
-- **Proof-Carrying Lean 4 Userspace (`buildVerifiedLeanSys` + `omarchnix audit`):** Builds `omarchnix-receipt-gate` from pinned `lean-sys` + `turbo-lean` + `LeanNative` with `0 sorryAx` (`TurboLean.Inspector`), `turbo-lean audit-spec` tightness verification, native Linux ARM64 (`--arch arm64 --isa armv8.2-crypto`) NEON `pmull` / x86_64 ELF64 codegen, fail-closed receipt extraction, verified plugin/sandbox admission policies, and externally pinned Ed25519 receipt/attestation verification (`security.omarchnix.trustedReceiptKeys`; explicit `--allow-dev-keys` for unauthenticated dev closures).
+- **Agent-First Ergonomics:** Automatically provisions the governed `omarchnix` system skill and live theme hooks for `opencode`, `claude`, `codex`, and `hermes`, backed by `omarchnix status` and `omarchnix check`.
 
 ### Reference `nixosConfigurations`
 
@@ -95,11 +94,10 @@ Every cell is backed by a recorded gate (CI run or runbook log in `docs/logs/`).
 
 - Touch ID (Omarchy kernel-fork work, not upstreamed to Asahi; tracked in `docs/decisions.md` as DR-2)
 - Metal (does not exist on Linux; Mesa Honeykrisp Vulkan 1.4 / OpenGL 4.6 is what Asahi ships)
-- Apple's verified boot / SIP inside Linux (replaced by the Asahi `m1n1` + U-Boot boot chain + LUKS2 `cryptroot` + `omarchnix` Ed25519 store receipts)
+- Apple's verified boot / SIP inside Linux (replaced by the Asahi `m1n1` + U-Boot boot chain + LUKS2 `cryptroot` + NixOS store reproducibility and AppArmor/container sandboxing)
 
 ## References
 
 - [nix-community/nixos-apple-silicon](https://github.com/nix-community/nixos-apple-silicon) — Apple Silicon hardware module and installer bootstrap
 - [Asahi Linux](https://asahilinux.org/) — kernel, `m1n1`, `asahi-audio`, Mesa Honeykrisp
 - [Omarchy](https://omarchy.org/) — theme, shell, and plugin ecosystem compatible with `omarchnix`
-- [Th0rgal/turbo-lean](https://github.com/Th0rgal/turbo-lean) & [Th0rgal/lean-sys](https://github.com/Th0rgal/lean-sys) — proof-carrying Lean 4 userspace & `LeanNative` backend

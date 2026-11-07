@@ -1,21 +1,20 @@
 # `omarchnix` — Vision & Architecture
 
-**`omarchnix`** combines three properties that rarely coexist in one Linux workstation operating system:
+**`omarchnix`** combines two properties that rarely coexist in one Linux workstation operating system:
 
 1. **Omarchy's instant aesthetic, QML shell, and keyboard-centric ergonomics** (`omacom/omarchy` themes, `quickshell` + `omarchy-shell` QML runtime, and `plugins.omarchy.org` ecosystem).
 2. **Pure, rollback-safe NixOS + Home Manager declarativity and defense-in-depth hardening** across both **`aarch64-linux`** (Apple Silicon M-series via Asahi Linux, NVIDIA Grace / DGX Spark) and **`x86_64-linux`** workstations and cloud/QEMU VMs.
-3. **Proof-carrying Lean 4 userspace** powered by `Th0rgal/turbo-lean`, `Th0rgal/lean-sys`, and `LeanNative` — where security-critical binaries carry `0 sorryAx` kernel axiom proofs, verified ARMv8.2+/NEON LLVM codegen, and offline-verifiable BLAKE3 + Ed25519 receipts inside `/nix/store`.
 
 ---
 
 ## 1. Cross-Architecture Hardware Targets
 
-`omarchnix` exports reusable modules (`nixosModules.omarchnix`, `homeManagerModules.omarchnix`) and reference host configurations across architectures without duplicating desktop, security, or Lean verification logic:
+`omarchnix` exports reusable modules (`nixosModules.omarchnix`, `homeManagerModules.omarchnix`) and reference host configurations across architectures without duplicating desktop or security logic:
 
 | Profile / Host | Architecture | Target Class | Boot & Hardware Model |
 | --- | --- | --- | --- |
 | `m2air` | `aarch64-linux` | Apple Silicon MacBook Air M2 (`J413`/`J415`) | Manual `m1n1` + U-Boot + vendorfw (DR-5), LUKS2 `cryptroot` + shared exFAT (DR-4), PipeWire `asahi-audio` DSP + `speakersafetyd`, 1.6x HiDPI + notch geometry |
-| `spark` | `aarch64-linux` | NVIDIA Grace / DGX Spark ARM64 server & workstation | UEFI `systemd-boot`, ARMv9/NEON/SVE2 `LeanNative` codegen, hardened headless or desktop profile |
+| `spark` | `aarch64-linux` | NVIDIA Grace / DGX Spark ARM64 server & workstation | UEFI `systemd-boot`, hardened headless or desktop profile |
 | `workstation` | `x86_64-linux` | AMD / Intel Linux desktop & cloud workstation | UEFI `systemd-boot`, KVM + `nixos-container` sandboxing, full Hyprland + `omarchy-shell` desktop |
 | `rehearsal` / `vm` | `aarch64-linux` | Scaleway `M2-L-ASAHI` Mac mini & QEMU guests | Disposable BootROM dress rehearsal with poweroff->reboot guard (DR-3 / DR-12) and CI/QEMU iteration |
 
@@ -32,22 +31,11 @@ Instead of forking Omarchy's themes or rewriting its QML shell, `omarchnix` trea
 
 ---
 
-## 3. Proof-Carrying Nix + `turbo-lean` Pipeline (DR-9 / DR-13)
+## 3. Defense-in-Depth Hardening & Sandboxing (DR-6 / DR-7 / DR-14)
 
-Nix guarantees *reproducible derivation provenance* (inputs -> build script -> store hash), while Lean 4 guarantees *mathematical specification adherence*. `omarchnix` fuses both into **Proof-Carrying Store Paths**:
+Security invariants are enforced directly through declarative NixOS and Home Manager primitives rather than auxiliary build-receipt daemons:
 
-```text
-Lean 4 Source (lean-sys / TurboLean, 0 sorryAx)
-        │
-        ├─► Kernel Axiom Gate (collectAxioms ⊆ {propext, Quot.sound, Classical.choice})
-        │
-        ├─► LeanNative Backend (native linux-arm64 armv8.2-crypto NEON pmull64 + LSE / x86_64)
-        │         └──► ELF64 Binary (/nix/store/.../bin/<exe>)
-        │
-        └─► Signed Receipt (/nix/store/.../share/omarchnix/receipts/<exe>.receipt.json)
-                  ├── interface_hash & receipt_blake3 (turbo-lean Schema v2)
-                  ├── binary_blake3 & target_isa ("aarch64-linux+armv8.2a+neon+pmull64" | "x86_64-linux+x86-64-v2+sse2+pclmulqdq")
-                  └── ed25519-v1 signature + optional external attestation verified offline by `omarchnix audit`
-```
-
-Running `omarchnix audit --pubkey <hex64>` (or configured via `security.omarchnix.trustedReceiptKeys` with `system.preSwitchChecks.omarchnix-receipts`) traverses `nix-store -qR` over a candidate or active system closure, enforces mandatory critical package coverage, rejects hostile/duplicate/missing JSON receipt fields without `.getD` defaults, recomputes every ELF binary's BLAKE3 hash, and verifies Ed25519 signatures offline in `< 10 ms`. Unpinned closures fail closed unless `--allow-dev-keys` is passed explicitly for development builds.
+- **Secrets Outside the Nix Store (DR-6):** `sops-nix` decrypts host secrets into `tmpfs` (`/run/secrets`) at activation using an owner-held `age` root key; zero plaintext secrets live in Git or `/nix/store`.
+- **Kernel, Firewall & AppArmor (`modules/hardening.nix`):** Enforces strict sysctl hardening, default-drop nftables firewalling, `doas` without root SSH/passwords, and mandatory AppArmor confinement on browsers and exposed network clients.
+- **Declarative Container & `bwrap` Isolation (`modules/containers.nix`, DR-7):** Isolates untrusted workloads inside networkless `nixos-container` (`systemd-nspawn`) sandboxes with explicit workspace bind-mounts and `devbox` (`bubblewrap`) wrappers.
+- **Pure-Nix Plugin Validation (`lib.omarchy.buildPlugin`, DR-10):** Rejects symlinks, path traversal (`..` / absolute paths), and malformed `manifest.json` payloads at Nix evaluation and derivation build time.

@@ -86,8 +86,8 @@ Record all outputs verbatim into `docs/logs/g6-<YYYY-MM-DD>.md`:
 - [ ] **Power, Battery Thresholds & `s2idle` Sleep:**
   - `systemctl status upower power-profiles-daemon macsmc-battery-thresholds` active; `cat /sys/class/power_supply/macsmc-battery/charge_control_end_threshold` returns `80`.
   - Close lid for 60s -> `journalctl -b -u systemd-suspend` confirms clean `s2idle` entry/resume, `hyprlock` locked before sleep, DPMS restored on wake, Wi-Fi (`brcmfmac` firmware supplicant) reconnects automatically.
-- [ ] **Omarchnix & Proof-Carrying Userspace:**
-  - `omarchnix audit --pubkey <owner-pubkey-hex>` (or `--allow-dev-keys` prior to pinning `security.omarchnix.trustedReceiptKeys` in `hosts/m2air.nix`) verifies `0 sorryAx` (`30` kernel axiom checks) and valid Ed25519/BLAKE3 receipts across `/run/current-system`.
+- [ ] **Omarchnix Shell & System Health:**
+  - `omarchnix status --json` and `omarchnix check --json` report `omarchy-shell` active, current theme staged cleanly, and all 4 coding-agent skill directories provisioned.
 
 ---
 

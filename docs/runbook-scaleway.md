@@ -23,7 +23,7 @@ U-Boot, and `/boot/asahi` vendor firmware already installed.
 
 ## 0. Preconditions
 
-- [ ] CI on `main` is green, including `installer-iso` and `verified-lean`.
+- [ ] CI on `main` is green, including `installer-iso`.
 - [ ] Hold the private half of the throwaway rehearsal key matching
       `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIrDpszSSJT9ZfrkTp/pPvA9vfzV0QGizKDTP2HEBG4Q`
       outside git (DR-6).
@@ -105,14 +105,12 @@ After reboot into NixOS (`ssh rehearsal@<ip>` with the throwaway key):
 ```console
 $ uname -a
 $ systemctl status systemd-poweroff.service systemd-halt.service
-$ ls -la /run/current-system/sw/share/omarchnix/receipts
-$ omarchnix audit --path /run/current-system --allow-dev-keys --json
+$ omarchnix status --json
 $ sudo nixos-rebuild switch --flake github:Th0rgal/omarchnix#rehearsal
 ```
 
 - [ ] Confirm `boot.loader.*` did not touch `/boot/asahi` (DR-5).
-- [ ] Confirm `omarchnix audit` verifies `omarchnix-receipt-gate` on real M2
-      silicon (`aarch64-linux+armv8.2a+neon+pmull64`).
+- [ ] Confirm `omarchnix status --json` reports the expected `asahi` profile on real M2 silicon.
 - [ ] Confirm a second `sudo systemctl reboot` returns cleanly over SSH.
 
 ## 5. Teardown

@@ -13,16 +13,16 @@ let
       ---
       name: omarchnix
       description: >
-        Governed customization and verification skill for omarchnix — the declarative,
-        proof-carrying Omarchy-compatible NixOS & Home Manager workstation stack across
-        aarch64-linux (Apple Silicon Asahi, NVIDIA Grace / DGX Spark) and x86_64-linux.
+        Governed customization and verification skill for omarchnix — the declarative
+        Omarchy-compatible NixOS & Home Manager workstation stack across aarch64-linux
+        (Apple Silicon Asahi, NVIDIA Grace / DGX Spark) and x86_64-linux.
         Use when changing themes, Hyprland Lua config, omarchy-shell QML/plugins, coding
         agent skins, or NixOS / Home Manager modules.
       ---
 
       # `omarchnix` System Skill
 
-      `omarchnix` combines upstream [Omarchy](https://omarchy.org) themes, `quickshell` + `omarchy-shell`, and the `plugins.omarchy.org` ecosystem with pure NixOS + Home Manager declarativity and proof-carrying Lean 4 (`turbo-lean` + `lean-sys` + `LeanNative`) userspace receipts.
+      `omarchnix` combines upstream [Omarchy](https://omarchy.org) themes, `quickshell` + `omarchy-shell`, and the `plugins.omarchy.org` ecosystem with pure NixOS + Home Manager declarativity and defense-in-depth hardening.
 
       ## Topic Guides
 
@@ -31,7 +31,6 @@ let
       - [`nixos-declarative.md`](nixos-declarative.md) — NixOS (`omarchnix.*`) & Home Manager (`programs.omarchnix.*`) options, host profiles (`asahi`, `spark`, `workstation`, `vm`), and safe `omarchnix check` validation before `nixos-rebuild`.
       - [`themes.md`](themes.md) — Declarative `lib.omarchy.importTheme` (all 23+ bundled palettes + custom `colors.toml` directories) and instant runtime switching via `omarchnix theme set <name>`.
       - [`shell-and-plugins.md`](shell-and-plugins.md) — `omarchy-shell` QML runtime, bar layout (`~/.config/omarchy/shell.json`), declarative `programs.omarchnix.plugins.locked` (`lib.omarchy.buildPlugin`), and runtime `plugins.omarchy.org` discovery/installation.
-      - [`proofs-and-audit.md`](proofs-and-audit.md) — Proof-carrying Lean 4 derivations (`pkgs.omarchnix.buildVerifiedLeanSys`) and offline BLAKE3 + Ed25519 verification with `omarchnix audit`.
 
       ## Golden Rules for Agents
 
@@ -134,32 +133,6 @@ let
       omarchnix plugin registry opencode
       omarchnix plugin install dizziee.opencode-model-usage --enable --yes
       omarchnix plugin validate ~/.config/omarchy/plugins/<id>
-      ```
-    '';
-
-    "proofs-and-audit.md" = ''
-      # Proof-Carrying Lean 4 Userspace & `omarchnix audit`
-
-      Security-critical `omarchnix` tools built with `pkgs.omarchnix.buildVerifiedLeanSys` (such as `omarchnix-receipt-gate`) enforce four independent build- and install-time gates:
-
-      1. **Zero `sorryAx` & kernel axiom gate:** `TurboLean.Inspector` inspects `Lean.collectAxioms` across all exported specifications and permits only `{propext, Quot.sound, Classical.choice}` (`0 sorryAx`, `0 Lean.trustCompiler`, `0 Lean.ofReduceBool`, `0 native_decide`).
-      2. **Non-vacuity & tightness audit:** `turbo-lean audit-spec` requires `0` vacuous or trivial theorems and `>= 1` tight functional equivalence theorems (`admitReceipt_eq_kernel`).
-      3. **Architecture-verified `LeanNative` codegen:** Compiles hot pure-Lean kernels (`OmarchnixGate/Kernel.lean`) through `LeanNative` LLVM 18 IR into `liblean_native_kernels.a`, emitting verified ARMv8.2+ NEON `pmull` SIMD on `aarch64-linux` and SSE2/PCLMULQDQ ELF64 `EM_X86_64` code on `x86_64-linux`, verified via `readelf` + `nm` anchor symbols + runtime `self-test`.
-      4. **Signed Schema v2 receipts + co-tampering defense:** Shrinks ELF RPATHs before hashing, records `BuildArtifacts/BinaryBlake3_<hex>.lean` and `BuildArtifacts/ArchiveBlake3_<hex>.lean` inside signed `per_file_interfaces`, emits `<out>/share/omarchnix/receipts/<name>.receipt.json` signed with `ed25519-v1`, and re-verifies zero binary BLAKE3 drift in `postFixup`.
-
-      Default deterministic signing seeds are public test/build inputs, not operator authentication. Their signatures detect corruption relative to a trusted build artifact but anyone can regenerate them. Use an independently trusted public key and externally isolated release signing for operator authority; never put a private signing seed in Nix expressions or the store. `receiptSigningSeedHex` is only appropriate for public deterministic/test seeds. The admission proof covers the Boolean policy, not the parser, compiler, cryptographic implementation, or whole operating system.
-
-      ## Offline Closure Audit Commands
-
-      ```bash
-      # Verify all proof-carrying receipts in /run/current-system
-      omarchnix audit
-
-      # Machine-readable audit of an explicit store path or staged package root
-      omarchnix audit --path /run/current-system --json
-
-      # Enforce an out-of-band operator/CI Ed25519 public key (64-char hex)
-      omarchnix audit --path /run/current-system --pubkey <ed25519_pubkey_hex> --json
       ```
     '';
   };
